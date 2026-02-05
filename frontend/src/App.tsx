@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { Send, GraduationCap, Loader2, Sparkles, Globe, FileText, Zap } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
@@ -8,6 +9,7 @@ interface Message {
   role: 'user' | 'model';
   content: string;
   sources?: string[];
+  sourceTitles?: Record<number, string>;
 }
 
 const samplePrompts = [
@@ -94,7 +96,9 @@ function App() {
                 setMessages(prev => {
                   const newMsgs = [...prev];
                   const last = newMsgs[newMsgs.length - 1];
-                  last.content = data.content ?? last.content;
+                  const rawContent = data.content ?? last.content;
+                  last.sourceTitles = extractSourceTitles(rawContent);
+                  last.content = stripSourcesSection(rawContent);
                   if (data.sources) {
                     last.sources = data.sources;
                   }
@@ -131,6 +135,36 @@ function App() {
   const statusLabel = status || (isStreaming ? 'Synthesizing response...' : 'Ready for research.');
   const latestReport = [...messages].reverse().find(msg => msg.role === 'model' && msg.content.trim());
   const latestUserPrompt = [...messages].reverse().find(msg => msg.role === 'user')?.content ?? 'Research Report';
+
+  const stripSourcesSection = (content: string) => {
+    const pattern = /\n(?:#{1,3}\s*)?Sources\s*\n[\s\S]*$/i;
+    return content.replace(pattern, '').trim();
+  };
+
+  const extractSourceTitles = (content: string) => {
+    const titles: Record<number, string> = {};
+    const lines = content.split('\n');
+    let inSources = false;
+    for (const rawLine of lines) {
+      const line = rawLine.trim();
+      if (!line) continue;
+      if (/^(#{1,3}\s*)?Sources$/i.test(line)) {
+        if (inSources) break;
+        inSources = true;
+        continue;
+      }
+      if (!inSources) continue;
+      if (line.startsWith('http://') || line.startsWith('https://')) {
+        continue;
+      }
+      const match = line.match(/^\[(\d+)\]\s+(.*)$/);
+      if (match) {
+        const index = parseInt(match[1], 10);
+        titles[index] = match[2].trim();
+      }
+    }
+    return titles;
+  };
 
   const parseSections = (content: string) => {
     const lines = content.split('\n');
@@ -365,19 +399,22 @@ function App() {
                     {msg.role === 'user' ? 'You' : 'The Scholar'}
                   </div>
                   <div className="md">
-                    <ReactMarkdown>{msg.content}</ReactMarkdown>
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
                   </div>
                   {msg.sources && msg.sources.length > 0 && (
                     <div className="sources">
                       <div className="sources-title">Sources</div>
                       <ol>
-                        {msg.sources.map((source, index) => (
+                        {msg.sources.map((source, index) => {
+                          const title = msg.sourceTitles?.[index + 1];
+                          return (
                           <li key={`${source}-${index}`}>
                             <a href={source} target="_blank" rel="noreferrer">
-                              {source}
+                              {title ? `${title}` : source}
                             </a>
                           </li>
-                        ))}
+                          );
+                        })}
                       </ol>
                     </div>
                   )}
@@ -447,9 +484,14 @@ function App() {
                 <div className="slide-inner">
                   <h2>Sources</h2>
                   <ol>
-                    {latestReport.sources.map((source, index) => (
-                      <li key={`${source}-${index}`}>{source}</li>
-                    ))}
+                    {latestReport.sources.map((source, index) => {
+                      const title = latestReport.sourceTitles?.[index + 1];
+                      return (
+                        <li key={`${source}-${index}`}>
+                          {title ? `${title} — ${source}` : source}
+                        </li>
+                      );
+                    })}
                   </ol>
                 </div>
               </div>

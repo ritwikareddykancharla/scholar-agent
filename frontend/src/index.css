@@ -418,6 +418,35 @@ body {
   font-size: 0.85rem;
 }
 
+.md table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0;
+  font-size: 0.9rem;
+  border: 1px solid var(--border);
+}
+
+.md thead {
+  background: #f8fafc;
+}
+
+.md th,
+.md td {
+  border: 1px solid var(--border);
+  padding: 0.6rem 0.75rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+.md th {
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.md tr:nth-child(even) td {
+  background: #fbfdff;
+}
+
 .md pre {
   background: #0f172a;
   color: #f8fafc;
