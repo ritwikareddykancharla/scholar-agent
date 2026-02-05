@@ -126,6 +126,30 @@ function App() {
   };
 
   const statusLabel = status || (isStreaming ? 'Synthesizing response...' : 'Ready for research.');
+  const latestReport = [...messages].reverse().find(msg => msg.role === 'model' && msg.content.trim());
+
+  const buildReportMarkdown = (msg: Message) => {
+    const timestamp = new Date().toLocaleString();
+    const header = `# Research Report\n\nGenerated: ${timestamp}\n\n`;
+    const sources = msg.sources && msg.sources.length > 0
+      ? `\n\n## Sources\n${msg.sources.map((source, index) => `${index + 1}. ${source}`).join('\n')}\n`
+      : '';
+    return `${header}${msg.content}${sources}`;
+  };
+
+  const handleDownload = () => {
+    if (!latestReport) return;
+    const report = buildReportMarkdown(latestReport);
+    const blob = new Blob([report], { type: 'text/markdown;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `scholar-report-${Date.now()}.md`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <div className="app">
@@ -201,6 +225,16 @@ function App() {
               <div className="eyebrow">Session</div>
               <h1>Evidence-first synthesis</h1>
               <p>Structured answers, transparent sources, and clear reasoning.</p>
+            </div>
+            <div className="workspace-actions">
+              <button
+                className="download-button"
+                onClick={handleDownload}
+                disabled={!latestReport}
+                title={latestReport ? 'Download report as Markdown' : 'Run a query to generate a report'}
+              >
+                Download report
+              </button>
             </div>
           </div>
 
