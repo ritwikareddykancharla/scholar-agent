@@ -2,6 +2,7 @@ import os
 import json
 import asyncio
 import re
+import time
 import httpx
 from google import genai
 from google.genai import types
@@ -273,7 +274,8 @@ class ScholarAgent:
         sys_instruct = (
             "You are The Scholar, a research engine. Use Google Search for facts and cite sources. "
             "Never ask the user to do their own research. If data is needed, search for it yourself. "
-            "When asked for a report, produce the full report with citations instead of an outline."
+            "When asked for a report, produce the full report with citations instead of an outline. "
+            "If evidence is insufficient, explicitly state limitations and what is missing."
         )
         config = types.GenerateContentConfig(
             system_instruction=sys_instruct,
@@ -284,10 +286,69 @@ class ScholarAgent:
         try:
             yield json.dumps({"type": "status", "content": "Analyzing request..."}) + "\n"
 
+            user_request = request.messages[-1].content if request.messages else ""
+            is_deep = _wants_deep_research(user_request)
+            research_notes: list[str] = []
+            pre_source_set = set()
+            start_time = time.monotonic()
+
+            if is_deep:
+                yield json.dumps({"type": "status", "content": "Deep research mode: planning research..."}) + "\n"
+                passes = int(os.getenv("DEEP_RESEARCH_PASSES", "2"))
+                for idx in range(passes):
+                    yield json.dumps({
+                        "type": "status",
+                        "content": f"Research pass {idx + 1}/{passes}: gathering evidence..."
+                    }) + "\n"
+                    notes_prompt = (
+                        "Collect evidence for the request below. Use Google Search tool calls. "
+                        "Return concise bullet notes with inline citations like [1]. "
+                        "Do NOT output a full report.\n\n"
+                        f"Request: {user_request}"
+                    )
+                    notes_response = self.client.models.generate_content(
+                        model=self.flash_model,
+                        contents=[types.Content(role="user", parts=[types.Part.from_text(text=notes_prompt)])],
+                        config=config
+                    )
+                    if notes_response.text:
+                        research_notes.append(notes_response.text)
+                    for url in _extract_grounding_urls(notes_response):
+                        pre_source_set.add(url)
+                    for url in _extract_urls(notes_response):
+                        pre_source_set.add(url)
+
+                min_seconds = int(os.getenv("DEEP_RESEARCH_MIN_SECONDS", "0"))
+                elapsed = time.monotonic() - start_time
+                while elapsed < min_seconds:
+                    remaining = int(min_seconds - elapsed)
+                    yield json.dumps({
+                        "type": "status",
+                        "content": f"Deep research: validating sources... ({remaining}s)"
+                    }) + "\n"
+                    await asyncio.sleep(min(10, remaining))
+                    elapsed = time.monotonic() - start_time
+
+            if is_deep:
+                notes_block = "\n\n".join(research_notes)
+                if len(notes_block) > 8000:
+                    notes_block = notes_block[:8000] + "\n\n[Notes truncated]"
+                final_prompt = (
+                    "Write the final deep research report now. Do NOT ask the user to search or gather "
+                    "information. Use Google Search tool calls as needed. Provide a complete report with "
+                    "inline citations like [1] and a Sources section. Use sections: Executive Summary, "
+                    "Key Financials, Segment Performance, Guidance & Outlook, Risks, and Sources. "
+                    "If evidence is insufficient, explicitly state limitations.\n\n"
+                    f"User request: {user_request}\n\nResearch notes (verify with fresh searches):\n{notes_block}"
+                )
+                final_contents = [types.Content(role="user", parts=[types.Part.from_text(text=final_prompt)])]
+            else:
+                final_contents = contents
+
             # Stream the main text response
             response_stream = self.client.models.generate_content_stream(
                 model=self.flash_model,
-                contents=contents,
+                contents=final_contents,
                 config=config
             )
 
@@ -334,20 +395,28 @@ class ScholarAgent:
             if not sources_list and source_set:
                 sources_list = _filter_sources(sorted(source_set))
 
+            if not sources_list and pre_source_set:
+                sources_list = _filter_sources(sorted(pre_source_set))
+
             if sources_list:
                 sources_list = _filter_sources(sources_list)
 
-            is_deep = _wants_deep_research(request.messages[-1].content if request.messages else "")
             should_regen = _needs_regen(full_response_text) or (is_deep and len(sources_list) < 3)
 
             if should_regen:
                 yield json.dumps({"type": "status", "content": "Deep research mode: refining report..."}) + "\n"
+                notes_suffix = ""
+                if research_notes:
+                    notes_block = "\n\n".join(research_notes)
+                    if len(notes_block) > 8000:
+                        notes_block = notes_block[:8000] + "\n\n[Notes truncated]"
+                    notes_suffix = f"\n\nResearch notes (verify with fresh searches):\n{notes_block}"
                 regen_prompt = (
                     "Write the final deep research report now. Do NOT ask the user to search or gather "
                     "information. Use Google Search tool calls as needed. Provide a complete report with "
                     "inline citations like [1] and a Sources section. Use sections: Executive Summary, "
                     "Key Financials, Segment Performance, Guidance & Outlook, Risks, and Sources.\n\n"
-                    f"User request: {request.messages[-1].content if request.messages else ''}"
+                    f"User request: {user_request}{notes_suffix}"
                 )
                 regen_contents = [
                     types.Content(role="user", parts=[types.Part.from_text(text=regen_prompt)])
