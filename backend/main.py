@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 import os
-from .researcher import scholar, ChatRequest, ChatResponse
+from backend.researcher import scholar, ChatRequest, ChatResponse
 
 app = FastAPI(title="Scholar Agent API")
 
