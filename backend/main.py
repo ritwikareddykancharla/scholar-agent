@@ -3,7 +3,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 import os
-from .researcher import scholar, ChatRequest, ChatResponse
+import sys
+
+# --- Fix Import Paths ---
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+from researcher import scholar, ChatRequest, ChatResponse
 
 app = FastAPI(title="Scholar Agent API")
 
