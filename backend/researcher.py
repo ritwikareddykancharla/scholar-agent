@@ -350,7 +350,9 @@ class ScholarAgent:
                 final_prompt = (
                     "Write the final deep research report now. Do NOT ask the user to search or gather "
                     "information. Use Google Search tool calls as needed. Provide a complete report with "
-                    "inline citations like [1] and a Sources section formatted as [n] Title — URL. "
+                    "inline citations like [1]. The Sources section MUST be formatted as:\n"
+                    "[1] Title — https://example.com\n"
+                    "[2] Title — https://example.com\n"
                     "Use sections: Executive Summary, Key Financials, Segment Performance, Guidance & Outlook, "
                     "Risks, and Sources. Write in full paragraphs (not a brief outline). "
                     "If evidence is insufficient, explicitly state limitations.\n\n"
@@ -433,8 +435,11 @@ class ScholarAgent:
                 regen_prompt = (
                     "Write the final deep research report now. Do NOT ask the user to search or gather "
                     "information. Use Google Search tool calls as needed. Provide a complete report with "
-                    "inline citations like [1] and a Sources section. Use sections: Executive Summary, "
-                    "Key Financials, Segment Performance, Guidance & Outlook, Risks, and Sources.\n\n"
+                    "inline citations like [1]. The Sources section MUST be formatted as:\n"
+                    "[1] Title — https://example.com\n"
+                    "[2] Title — https://example.com\n"
+                    "Use sections: Executive Summary, Key Financials, Segment Performance, Guidance & Outlook, "
+                    "Risks, and Sources. Write in full paragraphs (not a brief outline).\n\n"
                     f"User request: {user_request}{notes_suffix}"
                 )
                 regen_contents = [
