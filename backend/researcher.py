@@ -238,6 +238,72 @@ class ScholarAgent:
                         urls.add(uri)
             return urls
 
+        def _extract_sources_block(text: str) -> list[str]:
+            lines = text.split("\n")
+            in_sources = False
+            blocks: list[str] = []
+            for raw in lines:
+                line = raw.strip()
+                if not line:
+                    continue
+                if re.match(r"^(#{1,3}\s*)?Sources$", line, re.IGNORECASE):
+                    if in_sources:
+                        break
+                    in_sources = True
+                    continue
+                if not in_sources:
+                    continue
+                blocks.append(line)
+            return blocks
+
+        def _parse_sources_lines(lines: list[str]):
+            parsed = []
+            for line in lines:
+                match = re.match(r"^\[(\d+)\]\s+(.*?)(?:\s+—\s+|\s+-\s+)?(https?://\S+)?$", line)
+                if match:
+                    title = match.group(2).strip()
+                    url = match.group(3)
+                    parsed.append({"title": title, "url": url})
+                else:
+                    url_match = re.search(r"https?://\S+", line)
+                    if url_match:
+                        parsed.append({"title": line.replace(url_match.group(0), "").strip(), "url": url_match.group(0)})
+                    else:
+                        parsed.append({"title": line, "url": None})
+            return parsed
+
+        async def _repair_sources(lines: list[str], request_text: str):
+            parsed = _parse_sources_lines(lines)
+            if not parsed:
+                return []
+            missing = [item for item in parsed if not item.get("url")]
+            if not missing:
+                return parsed
+
+            titles = [item["title"] for item in missing]
+            prompt = (
+                "You are given a list of source titles. Use Google Search to find the exact source URLs. "
+                "Return JSON: {\"sources\":[{\"title\":\"...\",\"url\":\"https://...\"}]}.\n"
+                f"User request: {request_text}\nTitles: {titles}"
+            )
+            response = self.client.models.generate_content(
+                model=self.flash_model,
+                contents=[types.Content(role="user", parts=[types.Part.from_text(text=prompt)])],
+                config={
+                    "response_mime_type": "application/json",
+                    "tools": [types.Tool(google_search=types.GoogleSearch())]
+                }
+            )
+            try:
+                data = json.loads(response.text)
+                url_map = {item.get("title"): item.get("url") for item in data.get("sources", [])}
+                for item in parsed:
+                    if not item.get("url"):
+                        item["url"] = url_map.get(item.get("title"))
+            except Exception:
+                pass
+            return parsed
+
         def _extract_urls(obj) -> list[str]:
             urls = set()
 
@@ -331,7 +397,7 @@ class ScholarAgent:
                     for url in _extract_urls(notes_response):
                         pre_source_set.add(url)
 
-                min_seconds_default = "120" if is_deep else "0"
+                min_seconds_default = "0"
                 min_seconds = int(os.getenv("DEEP_RESEARCH_MIN_SECONDS", min_seconds_default))
                 elapsed = time.monotonic() - start_time
                 while elapsed < min_seconds:
@@ -489,6 +555,16 @@ class ScholarAgent:
 
                 if sources_list:
                     sources_list = _filter_sources(sources_list)
+
+                if not sources_list:
+                    source_lines = _extract_sources_block(cited_text)
+                    if source_lines:
+                        repaired = await _repair_sources(source_lines, user_request)
+                        sources_list = [item.get("url") for item in repaired if item.get("url")]
+                        if sources_list:
+                            cited_text = re.sub(r"\n(?:#{1,3}\s*)?Sources\s*\n[\s\S]*$", "", cited_text, flags=re.IGNORECASE).strip() + "\n\nSources\n" + "\n".join(
+                                [f"[{i+1}] {item.get('title','Source')} — {item.get('url')}" for i, item in enumerate(repaired) if item.get("url")]
+                            )
 
             yield json.dumps({
                 "type": "final",

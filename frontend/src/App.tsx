@@ -176,6 +176,10 @@ function App() {
 
   const statusLabel = status || (isStreaming ? 'Synthesizing response...' : 'Ready for research.');
   const latestReport = [...messages].reverse().find(msg => msg.role === 'model' && msg.content.trim());
+  const normalizedReport = latestReport ? {
+    ...latestReport,
+    content: latestReport.content.replace(/^\s*Deep Research Report\s*:\s*/i, '')
+  } : null;
   const latestUserPrompt = [...messages].reverse().find(msg => msg.role === 'user')?.content ?? 'Research Report';
 
   const defaultTheme = {
@@ -420,7 +424,7 @@ function App() {
     };
   };
 
-  const reportData = latestReport ? buildReportData(latestReport.content) : null;
+  const reportData = normalizedReport ? buildReportData(normalizedReport.content) : null;
 
   const buildBullets = (lines: string[]) => {
     const bullets = lines
@@ -512,7 +516,7 @@ function App() {
   };
 
   const renderReport = (exportMode = false) => {
-    if (!latestReport || !reportData) return null;
+    if (!normalizedReport || !reportData) return null;
     return (
       <div
         className={`report ${exportMode ? 'report-export' : ''}`}
@@ -578,12 +582,12 @@ function App() {
           </div>
         ))}
 
-        {latestReport.sources && latestReport.sources.length > 0 && (
+        {normalizedReport.sources && normalizedReport.sources.length > 0 && (
           <div className="report-section">
             <div className="report-section-title">Sources</div>
             <ol className="report-sources">
-              {latestReport.sources.map((source, index) => {
-                const title = latestReport.sourceTitles?.[index + 1];
+              {normalizedReport.sources.map((source, index) => {
+                const title = normalizedReport.sourceTitles?.[index + 1];
                 return (
                   <li key={`${source}-${index}`}>
                     <a href={source} target="_blank" rel="noreferrer">
