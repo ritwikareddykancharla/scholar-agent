@@ -135,7 +135,10 @@ function App() {
 
         {/* Status Indicator (Same as before) */}
         {status && (
-          // ... Status content ...
+          <div style={{ padding: '1rem 2rem 1rem 5rem', display: 'flex', alignItems: 'center', gap: '0.75rem', color: '#a1a1aa' }}>
+            <Loader2 className="animate-spin" size={16} />
+            <span style={{ fontSize: '0.9rem', fontFamily: 'monospace' }}>{status}</span>
+          </div>
         )}
         <div ref={messagesEndRef} />
       </div>
