@@ -1,7 +1,17 @@
 :root {
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
-  background-color: #fafafa;
+  background-color: #f3f4f6; /* Light gray background */
   color: #1a1a1a;
 }
-body { margin: 0; min-height: 100vh; display: flex; justify-content: center; }
-#root { width: 100%; max-width: 1000px; padding: 2rem; }
+body { margin: 0; min-height: 100vh; }
+#root { width: 100%; height: 100vh; }
+
+/* Simple prose styling for markdown */
+.prose p { margin-bottom: 0.75em; margin-top: 0; }
+.prose h1, .prose h2, .prose h3 { margin-top: 1.5em; margin-bottom: 0.5em; font-weight: 700; }
+.prose ul, .prose ol { padding-left: 1.5em; margin-bottom: 0.75em; }
+.prose li { margin-bottom: 0.25em; }
+.prose code { background: #f1f5f9; padding: 0.2em 0.4em; borderRadius: 4px; font-family: monospace; font-size: 0.9em; }
+.prose pre { background: #1e293b; color: white; padding: 1em; borderRadius: 8px; overflow-x: auto; }
+.prose pre code { background: transparent; padding: 0; color: inherit; }
+.prose blockquote { border-left: 4px solid #e5e7eb; padding-left: 1em; color: #6b7280; font-style: italic; }

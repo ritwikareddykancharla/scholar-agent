@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from .researcher import scholar, ResearchRequest, ResearchReport
+from .researcher import scholar, ChatRequest, ChatResponse
 
 app = FastAPI(title="Scholar Agent API")
 
@@ -16,12 +16,13 @@ app.add_middleware(
 async def root():
     return {"message": "Scholar Agent Backend is running"}
 
-@app.post("/api/research", response_model=ResearchReport)
-async def research(request: ResearchRequest):
+@app.post("/api/chat", response_model=ChatResponse)
+async def chat_endpoint(request: ChatRequest):
     try:
-        result = await scholar.conduct_research(request)
+        result = await scholar.chat(request)
         return result
     except Exception as e:
+        print(f"Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
