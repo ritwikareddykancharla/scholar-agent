@@ -32,6 +32,44 @@ class ScholarAgent:
         return self._client
 
     async def chat_stream(self, request: ChatRequest) -> AsyncGenerator[str, None]:
+        def _get(obj, *names):
+            if obj is None:
+                return None
+            for name in names:
+                if isinstance(obj, dict) and name in obj:
+                    return obj[name]
+                if hasattr(obj, name):
+                    return getattr(obj, name)
+            return None
+
+        def _ensure_list(value):
+            if value is None:
+                return []
+            if isinstance(value, list):
+                return value
+            if isinstance(value, tuple):
+                return list(value)
+            return [value]
+
+        def _extract_grounding_urls(resp) -> set[str]:
+            urls = set()
+            candidates = _ensure_list(_get(resp, "candidates"))
+            for cand in candidates:
+                gm = _get(cand, "grounding_metadata", "groundingMetadata")
+                if not gm:
+                    continue
+                chunks = _ensure_list(_get(gm, "grounding_chunks", "groundingChunks"))
+                for chunk in chunks:
+                    web = _get(chunk, "web", "web_result", "webResult")
+                    if web:
+                        uri = _get(web, "uri", "url")
+                        if uri:
+                            urls.add(uri)
+                    uri = _get(chunk, "uri", "url")
+                    if uri:
+                        urls.add(uri)
+            return urls
+
         def _extract_urls(obj) -> list[str]:
             urls = set()
 
@@ -98,6 +136,8 @@ class ScholarAgent:
             source_set = set()
             full_response_text = ""
             for chunk in response_stream:
+                for url in _extract_grounding_urls(chunk):
+                    source_set.add(url)
                 for url in _extract_urls(chunk):
                     source_set.add(url)
                 if chunk.text:
@@ -109,39 +149,36 @@ class ScholarAgent:
                             query = fc.args.get("query", "Unknown query")
                             yield json.dumps({"type": "log", "content": f"Searching for: {query}"}) + "\n"
             
-            # --- FINAL SOURCE CHECK ---
-            # After the stream, ask Gemini to extract the REAL sources from the full text it just generated
-            yield json.dumps({"type": "status", "content": "Verifying sources..."}) + "\n"
-            
-            # Create a new, separate request to extract sources from the generated text
-            source_extraction_prompt = f"""
-            Here is a research report:
-            ---
-            {full_response_text}
-            ---
-            Based on the grounding metadata and context available to you from the previous turn, list all the original source URLs that were used to generate this text.
-            Provide your response as a JSON object with a single key "sources" which is an array of strings.
-            Example: {{"sources": ["https://www.example.com/article1", "https://en.wikipedia.org/wiki/RNA"]}}
-            """
-            
-            # Create a new context for this specific task
-            source_context = contents + [types.Content(role="model", parts=[types.Part.from_text(full_response_text)])]
-            source_context.append(types.Content(role="user", parts=[types.Part.from_text(source_extraction_prompt)]))
+            if not source_set:
+                # --- FINAL SOURCE CHECK (fallback) ---
+                yield json.dumps({"type": "status", "content": "Verifying sources..."}) + "\n"
+                
+                source_extraction_prompt = f"""
+                Here is a research report:
+                ---
+                {full_response_text}
+                ---
+                Based on the grounding metadata and context available to you from the previous turn, list all the original source URLs that were used to generate this text.
+                Provide your response as a JSON object with a single key "sources" which is an array of strings.
+                Example: {{"sources": ["https://www.example.com/article1", "https://en.wikipedia.org/wiki/RNA"]}}
+                """
+                
+                source_context = contents + [types.Content(role="model", parts=[types.Part.from_text(full_response_text)])]
+                source_context.append(types.Content(role="user", parts=[types.Part.from_text(source_extraction_prompt)]))
 
-            source_response = self.client.models.generate_content(
-                model=self.flash_model,
-                contents=source_context,
-                config={'response_mime_type': 'application/json'}
-            )
+                source_response = self.client.models.generate_content(
+                    model=self.flash_model,
+                    contents=source_context,
+                    config={'response_mime_type': 'application/json'}
+                )
 
-            try:
-                sources_data = json.loads(source_response.text)
-                if "sources" in sources_data and isinstance(sources_data["sources"], list):
-                    for url in sources_data["sources"]:
-                        source_set.add(url)
-            except (json.JSONDecodeError, KeyError):
-                # If it fails to parse, we can't get sources this way
-                yield json.dumps({"type": "log", "content": "Could not verify sources with final check."}) + "\n"
+                try:
+                    sources_data = json.loads(source_response.text)
+                    if "sources" in sources_data and isinstance(sources_data["sources"], list):
+                        for url in sources_data["sources"]:
+                            source_set.add(url)
+                except (json.JSONDecodeError, KeyError):
+                    yield json.dumps({"type": "log", "content": "Could not verify sources with final check."}) + "\n"
 
             if source_set:
                 yield json.dumps({"type": "sources", "content": sorted(source_set)}) + "\n"
