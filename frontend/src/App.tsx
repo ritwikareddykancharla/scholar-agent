@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { Send, GraduationCap, Loader2, Sparkles, Globe, FileText, Zap } from 'lucide-react';
+import { jsPDF } from 'jspdf';
 
 interface Message {
   role: 'user' | 'model';
@@ -137,6 +138,25 @@ function App() {
     return `${header}${msg.content}${sources}`;
   };
 
+  const stripMarkdown = (text: string) => {
+    let out = text;
+    out = out.replace(/```/g, '');
+    out = out.replace(/`([^`]+)`/g, '$1');
+    out = out.replace(/\*\*([^*]+)\*\*/g, '$1');
+    out = out.replace(/\*([^*]+)\*/g, '$1');
+    out = out.replace(/#+\s?/g, '');
+    out = out.replace(/\[(.*?)\]\((.*?)\)/g, '$1 ($2)');
+    return out;
+  };
+
+  const buildReportText = (msg: Message) => {
+    const timestamp = new Date().toLocaleString();
+    const sources = msg.sources && msg.sources.length > 0
+      ? `\n\nSources:\n${msg.sources.map((source, index) => `${index + 1}. ${source}`).join('\n')}\n`
+      : '';
+    return `Research Report\nGenerated: ${timestamp}\n\n${stripMarkdown(msg.content)}${sources}`;
+  };
+
   const handleDownload = () => {
     if (!latestReport) return;
     const report = buildReportMarkdown(latestReport);
@@ -149,6 +169,40 @@ function App() {
     link.click();
     link.remove();
     URL.revokeObjectURL(url);
+  };
+
+  const handleDownloadPdf = () => {
+    if (!latestReport) return;
+    const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+    const margin = 56;
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    let y = margin;
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(18);
+    doc.text('Research Report', margin, y);
+    y += 22;
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(11);
+    doc.text(`Generated: ${new Date().toLocaleString()}`, margin, y);
+    y += 18;
+
+    const bodyText = buildReportText(latestReport);
+    const lines = doc.splitTextToSize(bodyText, pageWidth - margin * 2);
+    const lineHeight = 16;
+
+    for (const line of lines) {
+      if (y + lineHeight > pageHeight - margin) {
+        doc.addPage();
+        y = margin;
+      }
+      doc.text(line, margin, y);
+      y += lineHeight;
+    }
+
+    doc.save(`scholar-report-${Date.now()}.pdf`);
   };
 
   return (
@@ -229,11 +283,19 @@ function App() {
             <div className="workspace-actions">
               <button
                 className="download-button"
+                onClick={handleDownloadPdf}
+                disabled={!latestReport}
+                title={latestReport ? 'Download report as PDF' : 'Run a query to generate a report'}
+              >
+                Download PDF
+              </button>
+              <button
+                className="download-button secondary"
                 onClick={handleDownload}
                 disabled={!latestReport}
                 title={latestReport ? 'Download report as Markdown' : 'Run a query to generate a report'}
               >
-                Download report
+                Download MD
               </button>
             </div>
           </div>
