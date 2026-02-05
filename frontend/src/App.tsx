@@ -38,7 +38,7 @@ function App() {
         content: m.content
       }));
 
-      const response = await axios.post('http://localhost:8001/api/chat', {
+      const response = await axios.post('/api/chat', {
         messages: apiMessages
       });
 
