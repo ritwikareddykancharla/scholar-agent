@@ -1,9 +1,10 @@
 import os
 import json
+import asyncio
 from google import genai
 from google.genai import types
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List, Optional, AsyncGenerator
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -14,10 +15,6 @@ class Message(BaseModel):
 
 class ChatRequest(BaseModel):
     messages: List[Message]
-
-class ChatResponse(BaseModel):
-    response: str
-    sources: List[str] = []
 
 class ScholarAgent:
     def __init__(self):
@@ -33,7 +30,7 @@ class ScholarAgent:
             self._client = genai.Client(api_key=api_key)
         return self._client
 
-    async def chat(self, request: ChatRequest) -> ChatResponse:
+    async def chat_stream(self, request: ChatRequest) -> AsyncGenerator[str, None]:
         contents = [
             types.Content(
                 role="user" if msg.role == "user" else "model",
@@ -44,45 +41,65 @@ class ScholarAgent:
         sys_instruct = "You are The Scholar, a research engine. Use Google Search for facts and cite sources."
         config = types.GenerateContentConfig(
             system_instruction=sys_instruct,
-            tools=[types.Tool(google_search=types.GoogleSearch())]
-        )
-
-        # Generate the main text response
-        response = self.client.models.generate_content(
-            model=self.flash_model,
-            contents=contents,
-            config=config
-        )
-        
-        full_response_text = response.text
-        sources = []
-        
-        # --- FINAL SOURCE CHECK ---
-        # Ask Gemini to extract the REAL sources from the full text it just generated
-        source_extraction_prompt = f"""
-        Based on the grounding metadata and context from the previous turn that generated the report below, list all the original source URLs.
-        Report: "{full_response_text}"
-        Provide your response as a JSON object with a single key "sources" which is an array of strings.
-        Example: {{"sources": ["https://www.example.com/article1", "https://en.wikipedia.org/wiki/RNA"]}}
-        """
-        
-        source_context = contents + [types.Content(role="model", parts=[types.Part.from_text(full_response_text)])]
-        source_context.append(types.Content(role="user", parts=[types.Part.from_text(source_extraction_prompt)]))
-
-        source_response = self.client.models.generate_content(
-            model=self.flash_model,
-            contents=source_context,
-            config={'response_mime_type': 'application/json'}
+            tools=[types.Tool(google_search=types.GoogleSearch())],
+            temperature=0.3
         )
 
         try:
-            sources_data = json.loads(source_response.text)
-            if "sources" in sources_data and isinstance(sources_data["sources"], list):
-                sources = sources_data["sources"]
-        except (json.JSONDecodeError, KeyError):
-            # Fallback if parsing fails
-            pass
+            yield json.dumps({"type": "status", "content": "Analyzing request..."}) + "\n"
 
-        return ChatResponse(response=full_response_text, sources=sources)
+            # Stream the main text response
+            response_stream = self.client.models.generate_content_stream(
+                model=self.flash_model,
+                contents=contents,
+                config=config
+            )
+
+            full_response_text = ""
+            for chunk in response_stream:
+                if chunk.text:
+                    full_response_text += chunk.text
+                    yield json.dumps({"type": "token", "content": chunk.text}) + "\n"
+                if chunk.function_calls:
+                     for fc in chunk.function_calls:
+                         if fc.name == "google_search":
+                            query = fc.args.get("query", "Unknown query")
+                            yield json.dumps({"type": "log", "content": f"Searching for: {query}"}) + "\n"
+            
+            # --- FINAL SOURCE CHECK ---
+            # After the stream, ask Gemini to extract the REAL sources from the full text it just generated
+            yield json.dumps({"type": "status", "content": "Verifying sources..."}) + "\n"
+            
+            # Create a new, separate request to extract sources from the generated text
+            source_extraction_prompt = f"""
+            Here is a research report:
+            ---
+            {full_response_text}
+            ---
+            Based on the grounding metadata and context available to you from the previous turn, list all the original source URLs that were used to generate this text.
+            Provide your response as a JSON object with a single key "sources" which is an array of strings.
+            Example: {{"sources": ["https://www.example.com/article1", "https://en.wikipedia.org/wiki/RNA"]}}
+            """
+            
+            # Create a new context for this specific task
+            source_context = contents + [types.Content(role="model", parts=[types.Part.from_text(full_response_text)])]
+            source_context.append(types.Content(role="user", parts=[types.Part.from_text(source_extraction_prompt)]))
+
+            source_response = self.client.models.generate_content(
+                model=self.flash_model,
+                contents=source_context,
+                config={'response_mime_type': 'application/json'}
+            )
+
+            try:
+                sources_data = json.loads(source_response.text)
+                if "sources" in sources_data and isinstance(sources_data["sources"], list):
+                    yield json.dumps({"type": "sources", "content": sources_data["sources"]}) + "\n"
+            except (json.JSONDecodeError, KeyError):
+                # If it fails to parse, we can't get sources this way
+                yield json.dumps({"type": "log", "content": "Could not verify sources with final check."}) + "\n"
+
+        except Exception as e:
+            yield json.dumps({"type": "error", "content": str(e)}) + "\n"
 
 scholar = ScholarAgent()

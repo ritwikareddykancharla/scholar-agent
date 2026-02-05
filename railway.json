@@ -6,6 +6,12 @@
   },
   "deploy": {
     "startCommand": "python3 -m uvicorn backend.main:app --host 0.0.0.0 --port $PORT",
-    "restartPolicyType": "ON_FAILURE"
+    "restartPolicyType": "ON_FAILURE",
+    "rewrites": [
+      {
+        "source": "/api/:path*",
+        "destination": "http://localhost:$PORT/api/:path*"
+      }
+    ]
   }
 }
