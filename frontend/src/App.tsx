@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
+import axios from 'axios';
 import ReactMarkdown from 'react-markdown';
-import { Send, GraduationCap, Loader2, Sparkles, Globe } from 'lucide-react';
+import { Send, User, Bot, GraduationCap, Loader2, ExternalLink } from 'lucide-react';
 
 interface Message {
   role: 'user' | 'model';
@@ -11,8 +12,7 @@ interface Message {
 function App() {
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
-  const [status, setStatus] = useState<string>('');
-  const [isStreaming, setIsStreaming] = useState(false);
+  const [loading, setLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -21,128 +21,158 @@ function App() {
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages, status]);
+  }, [messages]);
 
   const handleSend = async () => {
-    if (!input.trim() || isStreaming) return;
+    if (!input.trim()) return;
 
     const userMsg: Message = { role: 'user', content: input };
     setMessages(prev => [...prev, userMsg]);
     setInput('');
-    setIsStreaming(true);
-    setStatus('Initializing Scholar...');
+    setLoading(true);
 
     try {
-      const response = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          messages: messages.concat(userMsg).map(m => ({ role: m.role, content: m.content }))
-        })
+      // Prepare history for backend (excluding sources, just content)
+      const apiMessages = [...messages, userMsg].map(m => ({
+        role: m.role,
+        content: m.content
+      }));
+
+      const response = await axios.post('/api/chat', {
+        messages: apiMessages
       });
 
-      const reader = response.body?.getReader();
-      const decoder = new TextDecoder();
+      const botMsg: Message = {
+        role: 'model',
+        content: response.data.response,
+        sources: response.data.sources
+      };
       
-      if (!reader) throw new Error("No reader");
-
-      setMessages(prev => [...prev, { role: 'model', content: '', sources: [] }]);
-
-      let buffer = '';
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        
-        let boundary = buffer.indexOf('\n');
-        while (boundary !== -1) {
-          const line = buffer.substring(0, boundary);
-
-          if (line.trim()) {
-            try {
-              const data = JSON.parse(line);
-              
-              if (data.type === 'token') {
-                setMessages(prev => {
-                  const newMsgs = [...prev];
-                  newMsgs[newMsgs.length - 1].content += data.content;
-                  return newMsgs;
-                });
-              } else if (data.type === 'status' || data.type === 'log') {
-                setStatus(data.content);
-              } else if (data.type === 'sources') {
-                setMessages(prev => {
-                  const newMsgs = [...prev];
-                  newMsgs[newMsgs.length - 1].sources = [...new Set([...(newMsgs[newMsgs.length - 1].sources || []), ...data.content])];
-                  return newMsgs;
-                });
-              }
-            } catch (e) {
-              console.error("Parse error", line, e);
-            }
-          }
-
-          buffer = buffer.substring(boundary + 1);
-          boundary = buffer.indexOf('\n');
-        }
-      }
+      setMessages(prev => [...prev, botMsg]);
     } catch (error) {
       console.error(error);
+      const errorMsg: Message = { role: 'model', content: "Error: Could not connect to the Scholar." };
+      setMessages(prev => [...prev, errorMsg]);
     } finally {
-      setIsStreaming(false);
-      setStatus('');
+      setLoading(false);
     }
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: '#09090b', color: '#e4e4e7', fontFamily: 'Inter, sans-serif' }}>
-      
-      {/* Header (Same as before) */}
-      <header style={{ padding: '1rem 2rem', borderBottom: '1px solid #27272a', display: 'flex', alignItems: 'center', gap: '1rem', background: '#09090b', zIndex: 10 }}>
-        {/* ... Header content ... */}
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', maxWidth: '1000px', margin: '0 auto', background: '#ffffff', boxShadow: '0 0 20px rgba(0,0,0,0.05)' }}>
+      {/* Header */}
+      <header style={{ padding: '1.5rem', borderBottom: '1px solid #e5e7eb', display: 'flex', alignItems: 'center', gap: '1rem', background: 'white', zIndex: 10 }}>
+        <div style={{ background: '#4f46e5', padding: '0.5rem', borderRadius: '0.5rem' }}>
+          <GraduationCap color="white" size={24} />
+        </div>
+        <div>
+          <h1 style={{ fontSize: '1.25rem', fontWeight: 'bold', margin: 0 }}>The Scholar</h1>
+          <p style={{ margin: 0, color: '#6b7280', fontSize: '0.875rem' }}>Context-Aware Research Agent</p>
+        </div>
       </header>
-      
-      {/* Chat Area - Layout Fixed */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '2rem', maxWidth: '800px', margin: '0 auto', width: '100%' }}>
+
+      {/* Chat Area */}
+      <div style={{ flex: 1, overflowY: 'auto', padding: '2rem', display: 'flex', flexDirection: 'column', gap: '1.5rem', background: '#f9fafb' }}>
+        {messages.length === 0 && (
+          <div style={{ textAlign: 'center', color: '#9ca3af', marginTop: '5rem' }}>
+            <GraduationCap size={64} style={{ margin: '0 auto 1rem auto', opacity: 0.2 }} />
+            <p>Start your research session.<br/>Ask a complex question.</p>
+          </div>
+        )}
+        
         {messages.map((msg, idx) => (
-          <div key={idx} style={{ 
-            display: 'flex', 
-            flexDirection: msg.role === 'user' ? 'row' : 'row-reverse', // Align user left, AI right
-            justifyContent: msg.role === 'user' ? 'flex-start' : 'flex-end',
-            marginBottom: '2rem'
-          }}>
-            <div style={{ maxWidth: '80%', display: 'flex', gap: '1rem' }}>
-              <div style={{ 
-                width: '32px', height: '32px', borderRadius: '50%', 
-                background: msg.role === 'user' ? '#27272a' : 'linear-gradient(135deg, #a855f7, #6366f1)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
-              }}>
-                {msg.role === 'user' ? 'U' : 'AI'}
+          <div key={idx} style={{ display: 'flex', gap: '1rem', flexDirection: msg.role === 'user' ? 'row-reverse' : 'row' }}>
+            <div style={{ 
+              width: '32px', height: '32px', borderRadius: '50%', 
+              background: msg.role === 'user' ? '#1f2937' : '#4f46e5',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              flexShrink: 0
+            }}>
+              {msg.role === 'user' ? <User size={16} color="white" /> : <Bot size={16} color="white" />}
+            </div>
+            
+            <div style={{ 
+              maxWidth: '80%', 
+              background: msg.role === 'user' ? '#1f2937' : 'white', 
+              color: msg.role === 'user' ? 'white' : '#1f2937',
+              padding: '1rem 1.5rem', 
+              borderRadius: '1rem',
+              borderTopRightRadius: msg.role === 'user' ? '0' : '1rem',
+              borderTopLeftRadius: msg.role === 'model' ? '0' : '1rem',
+              boxShadow: msg.role === 'model' ? '0 2px 4px rgba(0,0,0,0.05)' : 'none'
+            }}>
+              <div className="prose" style={{ lineHeight: 1.6 }}>
+                <ReactMarkdown>{msg.content}</ReactMarkdown>
               </div>
-              <div style={{ 
-                background: msg.role === 'user' ? '#18181b' : 'transparent',
-                padding: msg.role === 'user' ? '1rem 1.5rem' : '0',
-                borderRadius: '1rem' 
-              }}>
-                <div className="prose prose-invert">
-                  <ReactMarkdown>{msg.content}</ReactMarkdown>
+
+              {msg.sources && msg.sources.length > 0 && (
+                <div style={{ marginTop: '1rem', paddingTop: '0.5rem', borderTop: '1px solid #e5e7eb', fontSize: '0.85rem' }}>
+                  <p style={{ fontWeight: 'bold', marginBottom: '0.5rem', color: '#6b7280' }}>Sources:</p>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                    {msg.sources.map((src, i) => (
+                      <a key={i} href={src} target="_blank" rel="noopener noreferrer" style={{ 
+                        display: 'flex', alignItems: 'center', gap: '0.25rem', 
+                        color: '#4f46e5', textDecoration: 'none', background: '#eef2ff', 
+                        padding: '0.25rem 0.5rem', borderRadius: '0.25rem' 
+                      }}>
+                        <ExternalLink size={10} /> {new URL(src).hostname}
+                      </a>
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           </div>
         ))}
-
-        {/* Status Indicator (Same as before) */}
-        {status && (
-          // ... Status content ...
+        {loading && (
+          <div style={{ display: 'flex', gap: '1rem' }}>
+             <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: '#4f46e5', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Bot size={16} color="white" />
+            </div>
+            <div style={{ background: 'white', padding: '1rem', borderRadius: '1rem', borderTopLeftRadius: 0, boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
+              <Loader2 className="animate-spin" size={20} color="#4f46e5" />
+            </div>
+          </div>
         )}
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input Area (Same as before) */}
-      <div style={{ padding: '2rem', background: '#09090b' }}>
-        {/* ... Input content ... */}
+      {/* Input Area */}
+      <div style={{ padding: '1.5rem', background: 'white', borderTop: '1px solid #e5e7eb' }}>
+        <div style={{ display: 'flex', gap: '0.75rem', maxWidth: '100%', position: 'relative' }}>
+          <input
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyPress={(e) => e.key === 'Enter' && handleSend()}
+            placeholder="Type your follow-up question..."
+            style={{
+              flex: 1,
+              padding: '1rem 1.25rem',
+              borderRadius: '0.75rem',
+              border: '2px solid #e5e7eb',
+              fontSize: '1rem',
+              outline: 'none',
+            }}
+          />
+          <button
+            onClick={handleSend}
+            disabled={loading || !input}
+            style={{
+              padding: '0 1.5rem',
+              background: '#4f46e5',
+              color: 'white',
+              border: 'none',
+              borderRadius: '0.75rem',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              transition: 'background 0.2s'
+            }}
+          >
+            <Send size={20} />
+          </button>
+        </div>
       </div>
     </div>
   );
