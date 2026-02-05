@@ -97,7 +97,14 @@ function App() {
                   const newMsgs = [...prev];
                   const last = newMsgs[newMsgs.length - 1];
                   const rawContent = data.content ?? last.content;
-                  last.sourceTitles = extractSourceTitles(rawContent);
+                  const extractedTitles = extractSourceTitles(rawContent);
+                  const fallbackTitles: Record<number, string> = {};
+                  if (data.sources) {
+                    data.sources.forEach((source: string, index: number) => {
+                      fallbackTitles[index + 1] = extractedTitles[index + 1] || getHostTitle(source);
+                    });
+                  }
+                  last.sourceTitles = { ...fallbackTitles, ...extractedTitles };
                   last.content = stripSourcesSection(rawContent);
                   if (data.sources) {
                     last.sources = data.sources;
@@ -135,6 +142,54 @@ function App() {
   const statusLabel = status || (isStreaming ? 'Synthesizing response...' : 'Ready for research.');
   const latestReport = [...messages].reverse().find(msg => msg.role === 'model' && msg.content.trim());
   const latestUserPrompt = [...messages].reverse().find(msg => msg.role === 'user')?.content ?? 'Research Report';
+
+  const getHostTitle = (url: string) => {
+    try {
+      const host = new URL(url).hostname.replace('www.', '');
+      return host.charAt(0).toUpperCase() + host.slice(1);
+    } catch {
+      return url;
+    }
+  };
+
+  const getBrandTheme = (text: string, sources?: string[]) => {
+    const lower = text.toLowerCase();
+    const sourceText = (sources || []).join(' ').toLowerCase();
+    const combined = `${lower} ${sourceText}`;
+
+    if (combined.includes('reddit')) {
+      return {
+        accent: '#FF4500',
+        accentSoft: '#FFF1E8',
+        bg1: '#FFF8F5',
+        bg2: '#FFE9DC'
+      };
+    }
+    if (combined.includes('nvidia')) {
+      return {
+        accent: '#76B900',
+        accentSoft: '#F2F9E8',
+        bg1: '#F7FBF2',
+        bg2: '#EAF4DA'
+      };
+    }
+    if (combined.includes('apple')) {
+      return {
+        accent: '#111827',
+        accentSoft: '#F3F4F6',
+        bg1: '#F8FAFC',
+        bg2: '#EEF2F7'
+      };
+    }
+    return {
+      accent: '#2563eb',
+      accentSoft: '#EEF2FF',
+      bg1: '#F8FAFC',
+      bg2: '#EEF2FF'
+    };
+  };
+
+  const slideTheme = getBrandTheme(latestUserPrompt, latestReport?.sources);
 
   const stripSourcesSection = (content: string) => {
     const pattern = /\n(?:#{1,3}\s*)?Sources\s*\n[\s\S]*$/i;
@@ -457,7 +512,17 @@ function App() {
           </button>
         </div>
       </div>
-      <div className="slides-export" ref={slidesRef} aria-hidden="true">
+      <div
+        className="slides-export"
+        ref={slidesRef}
+        aria-hidden="true"
+        style={{
+          ['--slide-accent' as string]: slideTheme.accent,
+          ['--slide-accent-soft' as string]: slideTheme.accentSoft,
+          ['--slide-bg1' as string]: slideTheme.bg1,
+          ['--slide-bg2' as string]: slideTheme.bg2
+        }}
+      >
         {latestReport && (
           <>
             <div className="slide cover">

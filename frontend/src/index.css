@@ -576,7 +576,7 @@ body {
 .slide {
   width: 1280px;
   height: 720px;
-  background: linear-gradient(135deg, #f8fafc, #eef2ff);
+  background: linear-gradient(135deg, var(--slide-bg1, #f8fafc), var(--slide-bg2, #eef2ff));
   color: #0f172a;
   border-radius: 24px;
   overflow: hidden;
@@ -584,12 +584,12 @@ body {
 }
 
 .slide.alt {
-  background: linear-gradient(135deg, #ffffff, #f1f5f9);
+  background: linear-gradient(135deg, #ffffff, var(--slide-accent-soft, #f1f5f9));
 }
 
 .slide.cover {
-  background: radial-gradient(circle at 15% 20%, rgba(37, 99, 235, 0.2), transparent 40%),
-    linear-gradient(135deg, #f8fafc, #eef2ff);
+  background: radial-gradient(circle at 15% 20%, rgba(0, 0, 0, 0.08), transparent 40%),
+    linear-gradient(135deg, var(--slide-bg1, #f8fafc), var(--slide-bg2, #eef2ff));
 }
 
 .slide.sources-slide {
@@ -637,6 +637,14 @@ body {
   font-size: 18px;
   color: #1e293b;
   line-height: 1.6;
+}
+
+.slide::after {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 10px;
+  background: var(--slide-accent, #2563eb);
 }
 
 @media (max-width: 960px) {
