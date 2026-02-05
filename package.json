@@ -2,6 +2,6 @@
   "name": "scholar-agent-root",
   "scripts": {
     "build": "cd frontend && bun install && bun run build",
-    "start": "python3 -m uvicorn backend.main:app --host 0.0.0.0 --port $PORT"
+    "start": "cd frontend && bun install && bun run build && cd .. && python3 -m uvicorn backend.main:app --host 0.0.0.0 --port $PORT"
   }
 }
