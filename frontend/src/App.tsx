@@ -44,7 +44,7 @@ function App() {
     bg2: '#EEF2FF'
   });
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const slidesRef = useRef<HTMLDivElement>(null);
+  const reportExportRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -355,6 +355,73 @@ function App() {
     return sections;
   };
 
+  const extractFirstTable = (content: string) => {
+    const lines = content.split('\n');
+    for (let i = 0; i < lines.length - 1; i += 1) {
+      const header = lines[i].trim();
+      const divider = lines[i + 1].trim();
+      if (header.startsWith('|') && divider.match(/^\|?\s*[-: ]+\|/)) {
+        const headers = header.split('|').map(h => h.trim()).filter(Boolean);
+        const rows: { label: string; values: string[] }[] = [];
+        let j = i + 2;
+        while (j < lines.length && lines[j].trim().startsWith('|')) {
+          const cols = lines[j].split('|').map(c => c.trim()).filter(Boolean);
+          if (cols.length > 1) {
+            rows.push({ label: cols[0], values: cols.slice(1) });
+          }
+          j += 1;
+        }
+        return { headers, rows };
+      }
+    }
+    return null;
+  };
+
+  const parseAmount = (value: string) => {
+    if (!value) return null;
+    const cleaned = value.replace(/[$,%]/g, '').toLowerCase();
+    const number = parseFloat(cleaned);
+    if (Number.isNaN(number)) return null;
+    if (cleaned.includes('trillion') || cleaned.includes(' t')) return number * 1_000;
+    if (cleaned.includes('billion') || cleaned.includes(' b')) return number;
+    if (cleaned.includes('million') || cleaned.includes(' m')) return number / 1_000;
+    return number;
+  };
+
+  const buildReportData = (content: string) => {
+    const sections = parseSections(content).filter(section => !/sources/i.test(section.title));
+    const table = extractFirstTable(content);
+    const executive = sections.find(section => /executive summary/i.test(section.title)) || sections[0];
+    const remainingSections = sections.filter(section => section !== executive);
+    const metrics = table?.rows
+      .filter(row => /revenue|gross margin|eps|earnings per share|net income/i.test(row.label))
+      .map(row => ({
+        label: row.label,
+        value: row.values[row.values.length - 1] || row.values[0] || ''
+      })) || [];
+    const revenueRow = table?.rows.find(row => /revenue/i.test(row.label));
+    const chart = revenueRow
+      ? revenueRow.values.map((value, idx) => ({
+          label: table?.headers[idx + 1] || `Period ${idx + 1}`,
+          value,
+          numeric: parseAmount(value)
+        }))
+      : [];
+    const max = Math.max(...chart.map(item => item.numeric || 0), 0);
+
+    return {
+      sections,
+      remainingSections,
+      executive,
+      table,
+      metrics,
+      chart,
+      chartMax: max || 1
+    };
+  };
+
+  const reportData = latestReport ? buildReportData(latestReport.content) : null;
+
   const buildBullets = (lines: string[]) => {
     const bullets = lines
       .filter(line => /^[-*]\s+/.test(line) || /^\d+\.\s+/.test(line))
@@ -409,33 +476,127 @@ function App() {
     URL.revokeObjectURL(url);
   };
 
-  const handleDownloadSlidesPdf = async () => {
+  const handleDownloadReportPdf = async () => {
     if (!latestReport) return;
-    const container = slidesRef.current;
+    const container = reportExportRef.current;
     if (!container) return;
-    const slideNodes = Array.from(container.querySelectorAll('.slide')) as HTMLElement[];
-    if (slideNodes.length === 0) return;
+
+    const canvas = await html2canvas(container, {
+      scale: 2,
+      backgroundColor: null,
+      useCORS: true
+    });
+    const imgData = canvas.toDataURL('image/png');
 
     const pdf = new jsPDF({
-      orientation: 'landscape',
+      orientation: 'portrait',
       unit: 'px',
-      format: [1280, 720]
+      format: 'a4'
     });
 
-    for (let i = 0; i < slideNodes.length; i += 1) {
-      const slide = slideNodes[i];
-      const canvas = await html2canvas(slide, {
-        scale: 2,
-        backgroundColor: null
-      });
-      const imgData = canvas.toDataURL('image/png');
-      if (i > 0) {
-        pdf.addPage([1280, 720], 'landscape');
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    const imgWidth = pageWidth;
+    const imgHeight = canvas.height * (imgWidth / canvas.width);
+    let y = 0;
+
+    while (y < imgHeight) {
+      pdf.addImage(imgData, 'PNG', 0, -y, imgWidth, imgHeight);
+      y += pageHeight;
+      if (y < imgHeight) {
+        pdf.addPage();
       }
-      pdf.addImage(imgData, 'PNG', 0, 0, 1280, 720);
     }
 
     pdf.save(`scholar-report-${Date.now()}.pdf`);
+  };
+
+  const renderReport = (exportMode = false) => {
+    if (!latestReport || !reportData) return null;
+    return (
+      <div
+        className={`report ${exportMode ? 'report-export' : ''}`}
+        style={{
+          ['--report-accent' as string]: slideTheme.accent,
+          ['--report-accent-soft' as string]: slideTheme.accentSoft
+        }}
+      >
+        <div className="report-header">
+          <div>
+            <div className="report-kicker">Deep Research Report</div>
+            <h1>{latestUserPrompt}</h1>
+            <div className="report-meta">Generated {new Date().toLocaleDateString()}</div>
+          </div>
+          <div className="report-badge">Scholar</div>
+        </div>
+
+        {reportData.executive && (
+          <div className="report-summary">
+            <div className="report-section-title">Executive Summary</div>
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+              {reportData.executive.lines.join('\n')}
+            </ReactMarkdown>
+          </div>
+        )}
+
+        {reportData.metrics.length > 0 && (
+          <div className="report-metrics">
+            {reportData.metrics.slice(0, 4).map(metric => (
+              <div key={metric.label} className="metric-card">
+                <div className="metric-label">{metric.label}</div>
+                <div className="metric-value">{metric.value}</div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {reportData.chart.length > 0 && (
+          <div className="report-chart">
+            <div className="report-section-title">Revenue Trend</div>
+            <div className="chart-grid">
+              {reportData.chart.map(item => (
+                <div key={item.label} className="chart-row">
+                  <div className="chart-label">{item.label}</div>
+                  <div className="chart-bar">
+                    <span
+                      style={{ width: `${((item.numeric || 0) / reportData.chartMax) * 100}%` }}
+                    />
+                  </div>
+                  <div className="chart-value">{item.value}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {reportData.remainingSections.map(section => (
+          <div key={section.title} className="report-section">
+            <div className="report-section-title">{section.title}</div>
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+              {section.lines.join('\n')}
+            </ReactMarkdown>
+          </div>
+        ))}
+
+        {latestReport.sources && latestReport.sources.length > 0 && (
+          <div className="report-section">
+            <div className="report-section-title">Sources</div>
+            <ol className="report-sources">
+              {latestReport.sources.map((source, index) => {
+                const title = latestReport.sourceTitles?.[index + 1];
+                return (
+                  <li key={`${source}-${index}`}>
+                    <a href={source} target="_blank" rel="noreferrer">
+                      {title ? `${title}` : source}
+                    </a>
+                  </li>
+                );
+              })}
+            </ol>
+          </div>
+        )}
+      </div>
+    );
   };
 
   return (
@@ -531,11 +692,11 @@ function App() {
             <div className="workspace-actions">
               <button
                 className="download-button"
-                onClick={handleDownloadSlidesPdf}
+                onClick={handleDownloadReportPdf}
                 disabled={!latestReport}
-                title={latestReport ? 'Download slides PDF' : 'Run a query to generate a report'}
+                title={latestReport ? 'Download report PDF' : 'Run a query to generate a report'}
               >
-                Download Slides PDF
+                Download Report PDF
               </button>
               <button
                 className="download-button secondary"
@@ -547,6 +708,12 @@ function App() {
               </button>
             </div>
           </div>
+
+          {latestReport && reportData && (
+            <div className="report-view">
+              {renderReport(false)}
+            </div>
+          )}
 
           <div className="thread">
             {messages.length === 0 && (
@@ -638,57 +805,8 @@ function App() {
           </button>
         </div>
       </div>
-      <div
-        className="slides-export"
-        ref={slidesRef}
-        aria-hidden="true"
-        style={{
-          ['--slide-accent' as string]: slideTheme.accent,
-          ['--slide-accent-soft' as string]: slideTheme.accentSoft,
-          ['--slide-bg1' as string]: slideTheme.bg1,
-          ['--slide-bg2' as string]: slideTheme.bg2
-        }}
-      >
-        {latestReport && (
-          <>
-            <div className="slide cover">
-              <div className="slide-inner">
-                <div className="slide-kicker">Deep Research Report</div>
-                <h1>{stripInlineMarkdown(latestUserPrompt)}</h1>
-                <p>Generated {new Date().toLocaleDateString()}</p>
-              </div>
-            </div>
-            {slides.map((slide, index) => (
-              <div key={`${slide.title}-${index}`} className={`slide ${index % 2 === 0 ? 'alt' : ''}`}>
-                <div className="slide-inner">
-                  <h2>{stripInlineMarkdown(slide.title)}</h2>
-                  <ul>
-                    {slide.bullets.map((bullet, bulletIndex) => (
-                      <li key={`${bullet}-${bulletIndex}`}>{stripInlineMarkdown(bullet)}</li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
-            ))}
-            {latestReport.sources && latestReport.sources.length > 0 && (
-              <div className="slide sources-slide">
-                <div className="slide-inner">
-                  <h2>Sources</h2>
-                  <ol>
-                    {latestReport.sources.map((source, index) => {
-                      const title = latestReport.sourceTitles?.[index + 1];
-                      return (
-                        <li key={`${source}-${index}`}>
-                          {title ? `${title} — ${source}` : source}
-                        </li>
-                      );
-                    })}
-                  </ol>
-                </div>
-              </div>
-            )}
-          </>
-        )}
+      <div className="report-export-wrapper" ref={reportExportRef} aria-hidden="true">
+        {renderReport(true)}
       </div>
     </div>
   );
