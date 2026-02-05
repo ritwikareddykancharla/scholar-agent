@@ -1,0 +1,11 @@
+{
+  "$schema": "https://railway.app/tools/railway.schema.json",
+  "build": {
+    "builder": "RAILPACK",
+    "buildCommand": "cd frontend && bun install && bun run build"
+  },
+  "deploy": {
+    "startCommand": "python3 -m uvicorn backend.main:app --host 0.0.0.0 --port $PORT",
+    "restartPolicyType": "ON_FAILURE"
+  }
+}
