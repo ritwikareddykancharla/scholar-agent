@@ -36,6 +36,7 @@ function App() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [status, setStatus] = useState<string>('');
   const [isStreaming, setIsStreaming] = useState(false);
+  const [timeline, setTimeline] = useState<{ time: string; label: string }[]>([]);
   const [slideTheme, setSlideTheme] = useState({
     accent: '#2563eb',
     accentSoft: '#EEF2FF',
@@ -49,6 +50,15 @@ function App() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
+  const addTimeline = (label: string) => {
+    setTimeline(prev => {
+      const last = prev[prev.length - 1];
+      if (last && last.label === label) return prev;
+      const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      return [...prev, { time, label }].slice(-12);
+    });
+  };
+
   useEffect(() => {
     scrollToBottom();
   }, [messages, status]);
@@ -58,9 +68,11 @@ function App() {
 
     const userMsg: Message = { role: 'user', content: input };
     setMessages(prev => [...prev, userMsg]);
+    setTimeline([{ time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), label: 'Session started' }]);
     setInput('');
     setIsStreaming(true);
     setStatus('Initializing Scholar...');
+    addTimeline('Initializing Scholar...');
 
     try {
       const response = await fetch('/api/chat', {
@@ -118,8 +130,10 @@ function App() {
                   }
                   return newMsgs;
                 });
+                addTimeline('Report generated');
               } else if (data.type === 'status' || data.type === 'log') {
                 setStatus(data.content);
+                addTimeline(data.content);
               } else if (data.type === 'sources') {
                 setMessages(prev => {
                   const newMsgs = [...prev];
@@ -140,6 +154,7 @@ function App() {
       }
     } catch (error) {
       console.error(error);
+      addTimeline('Error generating report');
     } finally {
       setIsStreaming(false);
       setStatus('');
@@ -426,6 +441,21 @@ function App() {
               <span className={`status-dot ${isStreaming ? 'on' : 'off'}`} />
               {statusLabel}
             </div>
+          </div>
+          <div className="sidebar-card">
+            <div className="eyebrow">Research Timeline</div>
+            {timeline.length === 0 ? (
+              <div className="timeline-empty">Timeline appears during research.</div>
+            ) : (
+              <ul className="timeline">
+                {timeline.map((entry, index) => (
+                  <li key={`${entry.time}-${index}`} className="timeline-item">
+                    <span className="timeline-time">{entry.time}</span>
+                    <span className="timeline-label">{entry.label}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         </aside>
 

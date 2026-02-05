@@ -221,6 +221,39 @@ body {
   font-size: 0.9rem;
 }
 
+.timeline {
+  list-style: none;
+  padding: 0;
+  margin: 0.8rem 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.timeline-item {
+  display: flex;
+  gap: 0.6rem;
+  align-items: flex-start;
+}
+
+.timeline-time {
+  font-variant-numeric: tabular-nums;
+  color: #94a3b8;
+  min-width: 56px;
+}
+
+.timeline-label {
+  color: #1f2937;
+  line-height: 1.4;
+}
+
+.timeline-empty {
+  margin-top: 0.6rem;
+  color: #94a3b8;
+  font-size: 0.85rem;
+}
+
 .workspace {
   flex: 1;
   display: flex;
