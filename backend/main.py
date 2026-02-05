@@ -31,21 +31,6 @@ async def chat_endpoint(request: ChatRequest):
 # --- Serve Frontend ---
 frontend_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend", "dist")
 
-# SELF-HEALING: Build frontend if missing
-if not os.path.exists(frontend_path):
-    print(f"⚠️ Frontend build not found at: {frontend_path}")
-    print("🚀 Starting self-build of frontend...")
-    import subprocess
-    frontend_src = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend")
-    
-    if os.path.exists(frontend_src):
-        try:
-            subprocess.run(["npm", "install"], cwd=frontend_src, check=True)
-            subprocess.run(["npm", "run", "build"], cwd=frontend_src, check=True)
-            print("✅ Frontend build completed successfully!")
-        except Exception as e:
-            print(f"❌ Frontend build failed: {e}")
-
 if os.path.exists(frontend_path):
     app.mount("/assets", StaticFiles(directory=os.path.join(frontend_path, "assets")), name="assets")
 
@@ -57,7 +42,7 @@ if os.path.exists(frontend_path):
 else:
     @app.get("/")
     async def root():
-        return {"message": "Scholar Backend running. Frontend build failed. Check logs."}
+        return {"message": "Scholar Backend running. Frontend not found (Docker build should have created it)."}
 
 if __name__ == "__main__":
     import uvicorn
