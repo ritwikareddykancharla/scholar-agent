@@ -22,8 +22,7 @@ class ChatResponse(BaseModel):
 class ScholarAgent:
     def __init__(self):
         self._client = None
-        self.model_id = "gemini-2.0-flash"
-        self.system_instruction = "You are The Scholar, a research engine. Use Google Search for facts."
+        self.flash_model = "gemini-2.0-flash"
 
     @property
     def client(self):
@@ -42,20 +41,48 @@ class ScholarAgent:
             ) for msg in request.messages
         ]
 
+        sys_instruct = "You are The Scholar, a research engine. Use Google Search for facts and cite sources."
+        config = types.GenerateContentConfig(
+            system_instruction=sys_instruct,
+            tools=[types.Tool(google_search=types.GoogleSearch())]
+        )
+
+        # Generate the main text response
         response = self.client.models.generate_content(
-            model=self.model_id,
+            model=self.flash_model,
             contents=contents,
-            config=types.GenerateContentConfig(
-                system_instruction=self.system_instruction,
-                tools=[types.Tool(google_search=types.GoogleSearch())]
-            )
+            config=config
         )
         
+        full_response_text = response.text
         sources = []
-        if response.candidates[0].grounding_metadata and response.candidates[0].grounding_metadata.grounding_chunks:
-            for chunk in response.candidates[0].grounding_metadata.grounding_chunks:
-                if chunk.web: sources.append(chunk.web.uri)
         
-        return ChatResponse(response=response.text, sources=list(set(sources)))
+        # --- FINAL SOURCE CHECK ---
+        # Ask Gemini to extract the REAL sources from the full text it just generated
+        source_extraction_prompt = f"""
+        Based on the grounding metadata and context from the previous turn that generated the report below, list all the original source URLs.
+        Report: "{full_response_text}"
+        Provide your response as a JSON object with a single key "sources" which is an array of strings.
+        Example: {{"sources": ["https://www.example.com/article1", "https://en.wikipedia.org/wiki/RNA"]}}
+        """
+        
+        source_context = contents + [types.Content(role="model", parts=[types.Part.from_text(full_response_text)])]
+        source_context.append(types.Content(role="user", parts=[types.Part.from_text(source_extraction_prompt)]))
+
+        source_response = self.client.models.generate_content(
+            model=self.flash_model,
+            contents=source_context,
+            config={'response_mime_type': 'application/json'}
+        )
+
+        try:
+            sources_data = json.loads(source_response.text)
+            if "sources" in sources_data and isinstance(sources_data["sources"], list):
+                sources = sources_data["sources"]
+        except (json.JSONDecodeError, KeyError):
+            # Fallback if parsing fails
+            pass
+
+        return ChatResponse(response=full_response_text, sources=sources)
 
 scholar = ScholarAgent()
