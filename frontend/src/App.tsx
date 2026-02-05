@@ -37,6 +37,7 @@ function App() {
   const [status, setStatus] = useState<string>('');
   const [isStreaming, setIsStreaming] = useState(false);
   const [timeline, setTimeline] = useState<{ time: string; label: string }[]>([]);
+  const [activeTab, setActiveTab] = useState<'report' | 'chat'>('report');
   const [slideTheme, setSlideTheme] = useState({
     accent: '#2563eb',
     accentSoft: '#EEF2FF',
@@ -62,6 +63,12 @@ function App() {
   useEffect(() => {
     scrollToBottom();
   }, [messages, status]);
+
+  useEffect(() => {
+    if (latestReport && !isStreaming) {
+      setActiveTab('report');
+    }
+  }, [latestReport, isStreaming]);
 
   const handleSend = async () => {
     if (!input.trim() || isStreaming) return;
@@ -698,8 +705,32 @@ function App() {
           <div className="workspace-header">
             <div>
               <div className="eyebrow">Session</div>
-              <h1>Evidence-first synthesis</h1>
-              <p>Structured answers, transparent sources, and clear reasoning.</p>
+              <h1>{activeTab === 'report' ? 'Research report' : 'Research chat'}</h1>
+              <p>
+                {activeTab === 'report'
+                  ? 'Polished report layout ready for export.'
+                  : 'Ask follow-ups, request edits, and refine the report.'}
+              </p>
+              <div className="workspace-tabs" role="tablist" aria-label="Workspace tabs">
+                <button
+                  className={`tab-button ${activeTab === 'report' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('report')}
+                  type="button"
+                  role="tab"
+                  aria-selected={activeTab === 'report'}
+                >
+                  Report
+                </button>
+                <button
+                  className={`tab-button ${activeTab === 'chat' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('chat')}
+                  type="button"
+                  role="tab"
+                  aria-selected={activeTab === 'chat'}
+                >
+                  Chat
+                </button>
+              </div>
             </div>
             <div className="workspace-actions">
               <button
@@ -707,6 +738,7 @@ function App() {
                 onClick={handleDownloadReportPdf}
                 disabled={!latestReport}
                 title={latestReport ? 'Download report PDF' : 'Run a query to generate a report'}
+                style={{ display: activeTab === 'report' ? 'inline-flex' : 'none' }}
               >
                 Download Report PDF
               </button>
@@ -715,18 +747,29 @@ function App() {
                 onClick={handleDownload}
                 disabled={!latestReport}
                 title={latestReport ? 'Download report as Markdown' : 'Run a query to generate a report'}
+                style={{ display: activeTab === 'report' ? 'inline-flex' : 'none' }}
               >
                 Download MD
               </button>
             </div>
           </div>
 
-          {latestReport && reportData && (
+          {activeTab === 'report' && latestReport && reportData && (
             <div className="report-view">
               {renderReport(false)}
             </div>
           )}
 
+          {activeTab === 'report' && (!latestReport || !reportData) && (
+            <div className="report-empty">
+              <div className="report-empty-title">No report yet</div>
+              <div className="report-empty-sub">
+                Run a query to generate a report, then export it as PDF.
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'chat' && (
           <div className="thread">
             {messages.length === 0 && (
               <div className="empty">
@@ -795,6 +838,7 @@ function App() {
             )}
             <div ref={messagesEndRef} />
           </div>
+          )}
         </section>
       </div>
 
