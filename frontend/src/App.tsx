@@ -37,7 +37,7 @@ function App() {
   const [status, setStatus] = useState<string>('');
   const [isStreaming, setIsStreaming] = useState(false);
   const [timeline, setTimeline] = useState<{ time: string; label: string }[]>([]);
-  const [activeTab, setActiveTab] = useState<'report' | 'chat'>('report');
+  const [activeTab, setActiveTab] = useState<'report' | 'chat'>('chat');
   const [slideTheme, setSlideTheme] = useState({
     accent: '#2563eb',
     accentSoft: '#EEF2FF',
@@ -793,7 +793,7 @@ function App() {
             )}
 
             {messages.map((msg, idx) => {
-              const displayContent = msg === latestReport && msg.role === 'assistant'
+              const displayContent = msg === latestReport && msg.role === 'model'
                 ? stripExecutiveSummarySection(msg.content)
                 : msg.content;
               return (
