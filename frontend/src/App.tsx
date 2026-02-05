@@ -241,15 +241,15 @@ function App() {
                   {msg.sources && msg.sources.length > 0 && (
                     <div className="sources">
                       <div className="sources-title">Sources</div>
-                      <ul>
-                        {msg.sources.map(source => (
-                          <li key={source}>
+                      <ol>
+                        {msg.sources.map((source, index) => (
+                          <li key={`${source}-${index}`}>
                             <a href={source} target="_blank" rel="noreferrer">
                               {source}
                             </a>
                           </li>
                         ))}
-                      </ul>
+                      </ol>
                     </div>
                   )}
                 </div>

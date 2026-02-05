@@ -391,7 +391,8 @@ body {
   margin-bottom: 0.3rem;
 }
 
-.sources ul {
+.sources ul,
+.sources ol {
   margin: 0;
   padding-left: 1.1rem;
   color: #9aa4b2;
