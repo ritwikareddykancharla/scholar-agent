@@ -1,6 +1,7 @@
 import os
 import json
 import asyncio
+import re
 from google import genai
 from google.genai import types
 from pydantic import BaseModel
@@ -31,6 +32,45 @@ class ScholarAgent:
         return self._client
 
     async def chat_stream(self, request: ChatRequest) -> AsyncGenerator[str, None]:
+        def _extract_urls(obj) -> list[str]:
+            urls = set()
+
+            def walk(value):
+                if value is None:
+                    return
+                if isinstance(value, str):
+                    if value.startswith("http://") or value.startswith("https://"):
+                        urls.add(value)
+                    else:
+                        for match in re.findall(r"https?://[^\s\"'<>]+", value):
+                            urls.add(match)
+                    return
+                if isinstance(value, dict):
+                    for v in value.values():
+                        walk(v)
+                    return
+                if isinstance(value, (list, tuple, set)):
+                    for v in value:
+                        walk(v)
+                    return
+
+                # Pydantic-style models
+                if hasattr(value, "model_dump"):
+                    try:
+                        walk(value.model_dump())
+                        return
+                    except Exception:
+                        pass
+                if hasattr(value, "__dict__"):
+                    try:
+                        walk(vars(value))
+                        return
+                    except Exception:
+                        pass
+
+            walk(obj)
+            return list(urls)
+
         contents = [
             types.Content(
                 role="user" if msg.role == "user" else "model",
@@ -55,8 +95,11 @@ class ScholarAgent:
                 config=config
             )
 
+            source_set = set()
             full_response_text = ""
             for chunk in response_stream:
+                for url in _extract_urls(chunk):
+                    source_set.add(url)
                 if chunk.text:
                     full_response_text += chunk.text
                     yield json.dumps({"type": "token", "content": chunk.text}) + "\n"
@@ -94,10 +137,14 @@ class ScholarAgent:
             try:
                 sources_data = json.loads(source_response.text)
                 if "sources" in sources_data and isinstance(sources_data["sources"], list):
-                    yield json.dumps({"type": "sources", "content": sources_data["sources"]}) + "\n"
+                    for url in sources_data["sources"]:
+                        source_set.add(url)
             except (json.JSONDecodeError, KeyError):
                 # If it fails to parse, we can't get sources this way
                 yield json.dumps({"type": "log", "content": "Could not verify sources with final check."}) + "\n"
+
+            if source_set:
+                yield json.dumps({"type": "sources", "content": sorted(source_set)}) + "\n"
 
         except Exception as e:
             yield json.dumps({"type": "error", "content": str(e)}) + "\n"
