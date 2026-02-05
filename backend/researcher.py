@@ -38,10 +38,14 @@ class ScholarAgent:
             keywords = [
                 "deep research",
                 "report",
+                "outline",
+                "trends",
+                "deep dive",
                 "earnings",
                 "analysis",
                 "due diligence",
-                "investment memo"
+                "investment memo",
+                "memo"
             ]
             lower = text.lower()
             return any(k in lower for k in keywords)
@@ -59,6 +63,15 @@ class ScholarAgent:
                 "i can provide the content"
             ]
             return any(t in lower for t in triggers)
+
+        def _looks_like_outline(text: str) -> bool:
+            lines = [line.strip() for line in text.split("\n") if line.strip()]
+            if not lines:
+                return True
+            numbered = sum(1 for line in lines if re.match(r"^\d+\.\s+", line))
+            headings = sum(1 for line in lines if line.startswith("#"))
+            word_count = len(text.split())
+            return (numbered >= 6 and headings == 0 and word_count < 600)
 
         def _get(obj, *names):
             if obj is None:
@@ -318,7 +331,8 @@ class ScholarAgent:
                     for url in _extract_urls(notes_response):
                         pre_source_set.add(url)
 
-                min_seconds = int(os.getenv("DEEP_RESEARCH_MIN_SECONDS", "0"))
+                min_seconds_default = "120" if is_deep else "0"
+                min_seconds = int(os.getenv("DEEP_RESEARCH_MIN_SECONDS", min_seconds_default))
                 elapsed = time.monotonic() - start_time
                 while elapsed < min_seconds:
                     remaining = int(min_seconds - elapsed)
@@ -336,8 +350,9 @@ class ScholarAgent:
                 final_prompt = (
                     "Write the final deep research report now. Do NOT ask the user to search or gather "
                     "information. Use Google Search tool calls as needed. Provide a complete report with "
-                    "inline citations like [1] and a Sources section. Use sections: Executive Summary, "
-                    "Key Financials, Segment Performance, Guidance & Outlook, Risks, and Sources. "
+                    "inline citations like [1] and a Sources section formatted as [n] Title — URL. "
+                    "Use sections: Executive Summary, Key Financials, Segment Performance, Guidance & Outlook, "
+                    "Risks, and Sources. Write in full paragraphs (not a brief outline). "
                     "If evidence is insufficient, explicitly state limitations.\n\n"
                     f"User request: {user_request}\n\nResearch notes (verify with fresh searches):\n{notes_block}"
                 )
@@ -401,7 +416,11 @@ class ScholarAgent:
             if sources_list:
                 sources_list = _filter_sources(sources_list)
 
-            should_regen = _needs_regen(full_response_text) or (is_deep and len(sources_list) < 3)
+            should_regen = (
+                _needs_regen(full_response_text)
+                or (is_deep and (len(sources_list) < 3 or _looks_like_outline(full_response_text)))
+                or (is_deep and len(full_response_text.split()) < 600)
+            )
 
             if should_regen:
                 yield json.dumps({"type": "status", "content": "Deep research mode: refining report..."}) + "\n"
