@@ -20,7 +20,6 @@ class ScholarAgent:
     def __init__(self):
         self._client = None
         self.flash_model = "gemini-2.0-flash"
-        # self.pro_model = "gemini-1.5-pro" # Optional upgrade
 
     @property
     def client(self):
@@ -32,15 +31,6 @@ class ScholarAgent:
         return self._client
 
     async def chat_stream(self, request: ChatRequest) -> AsyncGenerator[str, None]:
-        """
-        Streams the thought process and final response.
-        Output format: JSON strings prefixed with data type.
-        e.g.
-        __THOUGHT__ I need to search for RNA types.
-        __SEARCH__ RNA types and function
-        __ANSWER__ RNA is a nucleic acid...
-        """
-        
         contents = [
             types.Content(
                 role="user" if msg.role == "user" else "model",
@@ -48,31 +38,7 @@ class ScholarAgent:
             ) for msg in request.messages
         ]
 
-        # Config for the "Thinking" Phase (Tool Use)
-        # We ask the model to explicitly narrate its actions
-        sys_instruct = """
-        You are The Scholar, an advanced research engine.
-        
-        PROTOCOL:
-        1. PLAN: First, think about what you need to research.
-        2. SEARCH: Use the Google Search tool to find facts. Perform multiple searches if needed.
-        3. SYNTHESIZE: After gathering info, write a deep, structured report.
-        
-        OUTPUT FORMAT:
-        - When you are thinking or planning, just speak normally.
-        - When you are writing the final report, ensure it is in Markdown.
-        """
-
-        # We use generate_content_stream to get real-time tokens
-        # Note: The SDK's automatic tool use might hide the intermediate steps.
-        # To show "Thinking", we might need to manually handle tool calls or use the automatic function calling events if available.
-        # For this Hackathon, we will simulate the "Thinking" UI by streaming the tool call requests if possible, 
-        # or by asking the model to "Think out loud" before calling tools.
-        
-        # Strategy: We'll use a single stream call with tools. 
-        # We will yield chunks. If a chunk contains a function call, we yield a "Searching..." log.
-        
-        # Create a new config for streaming
+        sys_instruct = "You are The Scholar, a research engine. Use Google Search for facts and cite sources."
         config = types.GenerateContentConfig(
             system_instruction=sys_instruct,
             tools=[types.Tool(google_search=types.GoogleSearch())],
@@ -80,46 +46,58 @@ class ScholarAgent:
         )
 
         try:
-            # Send initial "Thinking" signal
             yield json.dumps({"type": "status", "content": "Analyzing request..."}) + "\n"
 
-            # Stream the response
-            # Note: 2.0 Flash is fast. We want to capture the tool use.
-            # The python SDK handles tool calling automatically in simple mode, but for granular control we might need manual loop.
-            # Let's stick to automatic for stability, but we can infer "Searching" if there's a pause or specific content.
-            
-            # Actually, to show "Thinking" effectively with the Google Search tool, 
-            # we rely on the model's output. 
-            
+            # Stream the main text response
             response_stream = self.client.models.generate_content_stream(
                 model=self.flash_model,
                 contents=contents,
                 config=config
             )
 
+            full_response_text = ""
             for chunk in response_stream:
-                sources = []
-                # Check for valid grounding metadata to extract correct source URLs
-                if chunk.candidates and chunk.candidates[0].grounding_metadata:
-                    chunks_data = chunk.candidates[0].grounding_metadata.grounding_chunks
-                    if chunks_data:
-                        raw_sources = [c.web.uri for c in chunks_data if c.web and c.web.uri]
-                        # Clean up and deduplicate
-                        sources = sorted(list(set(raw_sources)))
-
-                if sources:
-                     yield json.dumps({"type": "sources", "content": sources}) + "\n"
-
-                # Check for text content
                 if chunk.text:
+                    full_response_text += chunk.text
                     yield json.dumps({"type": "token", "content": chunk.text}) + "\n"
-                
-                # Log search queries if the model makes a function call
                 if chunk.function_calls:
                      for fc in chunk.function_calls:
                          if fc.name == "google_search":
                             query = fc.args.get("query", "Unknown query")
                             yield json.dumps({"type": "log", "content": f"Searching for: {query}"}) + "\n"
+            
+            # --- FINAL SOURCE CHECK ---
+            # After the stream, ask Gemini to extract the REAL sources from the full text it just generated
+            yield json.dumps({"type": "status", "content": "Verifying sources..."}) + "\n"
+            
+            # Create a new, separate request to extract sources from the generated text
+            source_extraction_prompt = f"""
+            Here is a research report:
+            ---
+            {full_response_text}
+            ---
+            Based on the grounding metadata and context available to you from the previous turn, list all the original source URLs that were used to generate this text.
+            Provide your response as a JSON object with a single key "sources" which is an array of strings.
+            Example: {{"sources": ["https://www.example.com/article1", "https://en.wikipedia.org/wiki/RNA"]}}
+            """
+            
+            # Create a new context for this specific task
+            source_context = contents + [types.Content(role="model", parts=[types.Part.from_text(full_response_text)])]
+            source_context.append(types.Content(role="user", parts=[types.Part.from_text(source_extraction_prompt)]))
+
+            source_response = self.client.models.generate_content(
+                model=self.flash_model,
+                contents=source_context,
+                config={'response_mime_type': 'application/json'}
+            )
+
+            try:
+                sources_data = json.loads(source_response.text)
+                if "sources" in sources_data and isinstance(sources_data["sources"], list):
+                    yield json.dumps({"type": "sources", "content": sources_data["sources"]}) + "\n"
+            except (json.JSONDecodeError, KeyError):
+                # If it fails to parse, we can't get sources this way
+                yield json.dumps({"type": "log", "content": "Could not verify sources with final check."}) + "\n"
 
         except Exception as e:
             yield json.dumps({"type": "error", "content": str(e)}) + "\n"
