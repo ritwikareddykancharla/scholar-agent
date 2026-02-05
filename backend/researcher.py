@@ -33,6 +33,32 @@ class ScholarAgent:
         return self._client
 
     async def chat_stream(self, request: ChatRequest) -> AsyncGenerator[str, None]:
+        def _wants_deep_research(text: str) -> bool:
+            keywords = [
+                "deep research",
+                "report",
+                "earnings",
+                "analysis",
+                "due diligence",
+                "investment memo"
+            ]
+            lower = text.lower()
+            return any(k in lower for k in keywords)
+
+        def _needs_regen(text: str) -> bool:
+            lower = text.lower()
+            triggers = [
+                "search queries",
+                "i can help you gather",
+                "i can't directly",
+                "i cannot directly",
+                "use a word processor",
+                "suggested outline",
+                "you can then use",
+                "i can provide the content"
+            ]
+            return any(t in lower for t in triggers)
+
         def _get(obj, *names):
             if obj is None:
                 return None
@@ -244,7 +270,11 @@ class ScholarAgent:
             ) for msg in request.messages
         ]
 
-        sys_instruct = "You are The Scholar, a research engine. Use Google Search for facts and cite sources."
+        sys_instruct = (
+            "You are The Scholar, a research engine. Use Google Search for facts and cite sources. "
+            "Never ask the user to do their own research. If data is needed, search for it yourself. "
+            "When asked for a report, produce the full report with citations instead of an outline."
+        )
         config = types.GenerateContentConfig(
             system_instruction=sys_instruct,
             tools=[types.Tool(google_search=types.GoogleSearch())],
@@ -307,12 +337,71 @@ class ScholarAgent:
             if sources_list:
                 sources_list = _filter_sources(sources_list)
 
-            if sources_list:
-                yield json.dumps({
-                    "type": "final",
-                    "content": cited_text,
-                    "sources": sources_list
-                }) + "\n"
+            is_deep = _wants_deep_research(request.messages[-1].content if request.messages else "")
+            should_regen = _needs_regen(full_response_text) or (is_deep and len(sources_list) < 3)
+
+            if should_regen:
+                yield json.dumps({"type": "status", "content": "Deep research mode: refining report..."}) + "\n"
+                regen_prompt = (
+                    "Write the final deep research report now. Do NOT ask the user to search or gather "
+                    "information. Use Google Search tool calls as needed. Provide a complete report with "
+                    "inline citations like [1] and a Sources section. Use sections: Executive Summary, "
+                    "Key Financials, Segment Performance, Guidance & Outlook, Risks, and Sources.\n\n"
+                    f"User request: {request.messages[-1].content if request.messages else ''}"
+                )
+                regen_contents = [
+                    types.Content(role="user", parts=[types.Part.from_text(text=regen_prompt)])
+                ]
+                regen_stream = self.client.models.generate_content_stream(
+                    model=self.flash_model,
+                    contents=regen_contents,
+                    config=config
+                )
+
+                regen_source_set = set()
+                regen_text = ""
+                regen_grounding = None
+                for chunk in regen_stream:
+                    for url in _extract_grounding_urls(chunk):
+                        regen_source_set.add(url)
+                    for url in _extract_urls(chunk):
+                        regen_source_set.add(url)
+                    gm = _extract_grounding_metadata(chunk)
+                    if gm:
+                        regen_grounding = gm
+                    if chunk.text:
+                        regen_text += chunk.text
+
+                cited_text = regen_text
+                sources_list = []
+
+                if regen_grounding:
+                    chunk_urls, supports = _parse_grounding(regen_grounding)
+                    resolved = await _resolve_redirects([u for u in chunk_urls if u])
+                    resolved_iter = iter(resolved)
+                    normalized_chunk_urls = []
+                    for url in chunk_urls:
+                        if url:
+                            resolved_url = _clean_url(next(resolved_iter))
+                            if resolved_url and _is_redirect(resolved_url):
+                                resolved_url = None
+                            normalized_chunk_urls.append(resolved_url)
+                        else:
+                            normalized_chunk_urls.append(None)
+                    sources_list, index_map = _build_source_map(normalized_chunk_urls)
+                    cited_text = _insert_citations(regen_text, supports, index_map)
+
+                if not sources_list and regen_source_set:
+                    sources_list = _filter_sources(sorted(regen_source_set))
+
+                if sources_list:
+                    sources_list = _filter_sources(sources_list)
+
+            yield json.dumps({
+                "type": "final",
+                "content": cited_text,
+                "sources": sources_list
+            }) + "\n"
 
         except Exception as e:
             yield json.dumps({"type": "error", "content": str(e)}) + "\n"

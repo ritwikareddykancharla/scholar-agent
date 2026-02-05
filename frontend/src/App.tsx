@@ -138,23 +138,13 @@ function App() {
     return `${header}${msg.content}${sources}`;
   };
 
-  const stripMarkdown = (text: string) => {
+  const stripInlineMarkdown = (text: string) => {
     let out = text;
-    out = out.replace(/```/g, '');
     out = out.replace(/`([^`]+)`/g, '$1');
     out = out.replace(/\*\*([^*]+)\*\*/g, '$1');
     out = out.replace(/\*([^*]+)\*/g, '$1');
-    out = out.replace(/#+\s?/g, '');
     out = out.replace(/\[(.*?)\]\((.*?)\)/g, '$1 ($2)');
     return out;
-  };
-
-  const buildReportText = (msg: Message) => {
-    const timestamp = new Date().toLocaleString();
-    const sources = msg.sources && msg.sources.length > 0
-      ? `\n\nSources:\n${msg.sources.map((source, index) => `${index + 1}. ${source}`).join('\n')}\n`
-      : '';
-    return `Research Report\nGenerated: ${timestamp}\n\n${stripMarkdown(msg.content)}${sources}`;
   };
 
   const handleDownload = () => {
@@ -179,6 +169,9 @@ function App() {
     const pageHeight = doc.internal.pageSize.getHeight();
     let y = margin;
 
+    doc.setFillColor(37, 99, 235);
+    doc.rect(0, 0, pageWidth, 8, 'F');
+
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(18);
     doc.text('Research Report', margin, y);
@@ -187,19 +180,52 @@ function App() {
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(11);
     doc.text(`Generated: ${new Date().toLocaleString()}`, margin, y);
-    y += 18;
+    y += 22;
 
-    const bodyText = buildReportText(latestReport);
-    const lines = doc.splitTextToSize(bodyText, pageWidth - margin * 2);
-    const lineHeight = 16;
-
-    for (const line of lines) {
-      if (y + lineHeight > pageHeight - margin) {
-        doc.addPage();
-        y = margin;
+    const maxWidth = pageWidth - margin * 2;
+    const writeLines = (text: string, size: number, style: 'normal' | 'bold' = 'normal') => {
+      doc.setFont('helvetica', style);
+      doc.setFontSize(size);
+      const lines = doc.splitTextToSize(text, maxWidth);
+      const lineHeight = size + 6;
+      for (const line of lines) {
+        if (y + lineHeight > pageHeight - margin) {
+          doc.addPage();
+          y = margin;
+        }
+        doc.text(line, margin, y);
+        y += lineHeight;
       }
-      doc.text(line, margin, y);
-      y += lineHeight;
+      y += 4;
+    };
+
+    const contentLines = latestReport.content.split('\n');
+    for (const rawLine of contentLines) {
+      const line = rawLine.trim();
+      if (!line) {
+        y += 8;
+        continue;
+      }
+      if (line.startsWith('# ')) {
+        writeLines(stripInlineMarkdown(line.replace(/^#\s+/, '')), 16, 'bold');
+        continue;
+      }
+      if (line.startsWith('## ')) {
+        writeLines(stripInlineMarkdown(line.replace(/^##\s+/, '')), 13, 'bold');
+        continue;
+      }
+      if (line.startsWith('### ')) {
+        writeLines(stripInlineMarkdown(line.replace(/^###\s+/, '')), 12, 'bold');
+        continue;
+      }
+      writeLines(stripInlineMarkdown(line), 11, 'normal');
+    }
+
+    if (latestReport.sources && latestReport.sources.length > 0) {
+      writeLines('Sources', 13, 'bold');
+      latestReport.sources.forEach((source, index) => {
+        writeLines(`${index + 1}. ${source}`, 10, 'normal');
+      });
     }
 
     doc.save(`scholar-report-${Date.now()}.pdf`);
