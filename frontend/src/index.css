@@ -1,8 +1,8 @@
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Sora:wght@400;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Sora:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
 :root {
   color-scheme: dark;
-  font-family: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+  font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
   background-color: #0b0d10;
   color: #e7ecf3;
 }
@@ -70,7 +70,7 @@ body {
 }
 
 .brand-title {
-  font-family: 'Sora', sans-serif;
+  font-family: 'Sora', 'Plus Jakarta Sans', sans-serif;
   font-weight: 700;
   letter-spacing: 0.3px;
 }
@@ -148,7 +148,7 @@ body {
 
 .sidebar-card h2 {
   margin: 0.4rem 0 0.5rem;
-  font-family: 'Sora', sans-serif;
+  font-family: 'Sora', 'Plus Jakarta Sans', sans-serif;
   font-size: 1.2rem;
 }
 
@@ -223,7 +223,7 @@ body {
 
 .workspace-header h1 {
   margin: 0.4rem 0 0.35rem;
-  font-family: 'Sora', sans-serif;
+  font-family: 'Sora', 'Plus Jakarta Sans', sans-serif;
   font-size: 1.6rem;
 }
 
@@ -356,7 +356,7 @@ body {
 .md h3 {
   margin-top: 1.2em;
   margin-bottom: 0.4em;
-  font-family: 'Sora', sans-serif;
+  font-family: 'Sora', 'Plus Jakarta Sans', sans-serif;
 }
 
 .md code {
@@ -449,7 +449,7 @@ body {
   padding: 0.9rem 1rem;
   font-size: 0.95rem;
   outline: none;
-  font-family: 'IBM Plex Sans', sans-serif;
+  font-family: 'Plus Jakarta Sans', sans-serif;
   line-height: 1.4;
 }
 
