@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { Send, GraduationCap, Loader2, Sparkles, Globe, FileText, Zap } from 'lucide-react';
 import { jsPDF } from 'jspdf';
+import html2canvas from 'html2canvas';
 
 interface Message {
   role: 'user' | 'model';
@@ -33,6 +34,7 @@ function App() {
   const [status, setStatus] = useState<string>('');
   const [isStreaming, setIsStreaming] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const slidesRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -128,6 +130,52 @@ function App() {
 
   const statusLabel = status || (isStreaming ? 'Synthesizing response...' : 'Ready for research.');
   const latestReport = [...messages].reverse().find(msg => msg.role === 'model' && msg.content.trim());
+  const latestUserPrompt = [...messages].reverse().find(msg => msg.role === 'user')?.content ?? 'Research Report';
+
+  const parseSections = (content: string) => {
+    const lines = content.split('\n');
+    const sections: { title: string; lines: string[] }[] = [];
+    let current = { title: 'Summary', lines: [] as string[] };
+
+    for (const raw of lines) {
+      const line = raw.trim();
+      if (!line) continue;
+      if (line.startsWith('#')) {
+        if (current.lines.length > 0 || current.title !== 'Summary') {
+          sections.push(current);
+        }
+        current = { title: line.replace(/^#+\s*/, ''), lines: [] };
+      } else {
+        current.lines.push(line);
+      }
+    }
+    if (current.lines.length > 0 || sections.length === 0) {
+      sections.push(current);
+    }
+    return sections;
+  };
+
+  const buildBullets = (lines: string[]) => {
+    const bullets = lines
+      .filter(line => /^[-*]\s+/.test(line) || /^\d+\.\s+/.test(line))
+      .map(line => line.replace(/^[-*]\s+/, '').replace(/^\d+\.\s+/, ''));
+    if (bullets.length > 0) {
+      return bullets.slice(0, 6);
+    }
+    const text = lines.join(' ');
+    return text.split('. ').map(s => s.trim()).filter(Boolean).slice(0, 6);
+  };
+
+  const slides = latestReport
+    ? (() => {
+        const sections = parseSections(latestReport.content);
+        const slideItems = sections.map(section => ({
+          title: section.title,
+          bullets: buildBullets(section.lines)
+        }));
+        return slideItems;
+      })()
+    : [];
 
   const buildReportMarkdown = (msg: Message) => {
     const timestamp = new Date().toLocaleString();
@@ -161,74 +209,33 @@ function App() {
     URL.revokeObjectURL(url);
   };
 
-  const handleDownloadPdf = () => {
+  const handleDownloadSlidesPdf = async () => {
     if (!latestReport) return;
-    const doc = new jsPDF({ unit: 'pt', format: 'a4' });
-    const margin = 56;
-    const pageWidth = doc.internal.pageSize.getWidth();
-    const pageHeight = doc.internal.pageSize.getHeight();
-    let y = margin;
+    const container = slidesRef.current;
+    if (!container) return;
+    const slideNodes = Array.from(container.querySelectorAll('.slide')) as HTMLElement[];
+    if (slideNodes.length === 0) return;
 
-    doc.setFillColor(37, 99, 235);
-    doc.rect(0, 0, pageWidth, 8, 'F');
+    const pdf = new jsPDF({
+      orientation: 'landscape',
+      unit: 'px',
+      format: [1280, 720]
+    });
 
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(18);
-    doc.text('Research Report', margin, y);
-    y += 22;
-
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(11);
-    doc.text(`Generated: ${new Date().toLocaleString()}`, margin, y);
-    y += 22;
-
-    const maxWidth = pageWidth - margin * 2;
-    const writeLines = (text: string, size: number, style: 'normal' | 'bold' = 'normal') => {
-      doc.setFont('helvetica', style);
-      doc.setFontSize(size);
-      const lines = doc.splitTextToSize(text, maxWidth);
-      const lineHeight = size + 6;
-      for (const line of lines) {
-        if (y + lineHeight > pageHeight - margin) {
-          doc.addPage();
-          y = margin;
-        }
-        doc.text(line, margin, y);
-        y += lineHeight;
-      }
-      y += 4;
-    };
-
-    const contentLines = latestReport.content.split('\n');
-    for (const rawLine of contentLines) {
-      const line = rawLine.trim();
-      if (!line) {
-        y += 8;
-        continue;
-      }
-      if (line.startsWith('# ')) {
-        writeLines(stripInlineMarkdown(line.replace(/^#\s+/, '')), 16, 'bold');
-        continue;
-      }
-      if (line.startsWith('## ')) {
-        writeLines(stripInlineMarkdown(line.replace(/^##\s+/, '')), 13, 'bold');
-        continue;
-      }
-      if (line.startsWith('### ')) {
-        writeLines(stripInlineMarkdown(line.replace(/^###\s+/, '')), 12, 'bold');
-        continue;
-      }
-      writeLines(stripInlineMarkdown(line), 11, 'normal');
-    }
-
-    if (latestReport.sources && latestReport.sources.length > 0) {
-      writeLines('Sources', 13, 'bold');
-      latestReport.sources.forEach((source, index) => {
-        writeLines(`${index + 1}. ${source}`, 10, 'normal');
+    for (let i = 0; i < slideNodes.length; i += 1) {
+      const slide = slideNodes[i];
+      const canvas = await html2canvas(slide, {
+        scale: 2,
+        backgroundColor: null
       });
+      const imgData = canvas.toDataURL('image/png');
+      if (i > 0) {
+        pdf.addPage([1280, 720], 'landscape');
+      }
+      pdf.addImage(imgData, 'PNG', 0, 0, 1280, 720);
     }
 
-    doc.save(`scholar-report-${Date.now()}.pdf`);
+    pdf.save(`scholar-report-${Date.now()}.pdf`);
   };
 
   return (
@@ -309,11 +316,11 @@ function App() {
             <div className="workspace-actions">
               <button
                 className="download-button"
-                onClick={handleDownloadPdf}
+                onClick={handleDownloadSlidesPdf}
                 disabled={!latestReport}
-                title={latestReport ? 'Download report as PDF' : 'Run a query to generate a report'}
+                title={latestReport ? 'Download slides PDF' : 'Run a query to generate a report'}
               >
-                Download PDF
+                Download Slides PDF
               </button>
               <button
                 className="download-button secondary"
@@ -412,6 +419,43 @@ function App() {
             {isStreaming ? <Loader2 className="spin" size={18} /> : <Send size={18} />}
           </button>
         </div>
+      </div>
+      <div className="slides-export" ref={slidesRef} aria-hidden="true">
+        {latestReport && (
+          <>
+            <div className="slide cover">
+              <div className="slide-inner">
+                <div className="slide-kicker">Deep Research Report</div>
+                <h1>{stripInlineMarkdown(latestUserPrompt)}</h1>
+                <p>Generated {new Date().toLocaleDateString()}</p>
+              </div>
+            </div>
+            {slides.map((slide, index) => (
+              <div key={`${slide.title}-${index}`} className={`slide ${index % 2 === 0 ? 'alt' : ''}`}>
+                <div className="slide-inner">
+                  <h2>{stripInlineMarkdown(slide.title)}</h2>
+                  <ul>
+                    {slide.bullets.map((bullet, bulletIndex) => (
+                      <li key={`${bullet}-${bulletIndex}`}>{stripInlineMarkdown(bullet)}</li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            ))}
+            {latestReport.sources && latestReport.sources.length > 0 && (
+              <div className="slide sources-slide">
+                <div className="slide-inner">
+                  <h2>Sources</h2>
+                  <ol>
+                    {latestReport.sources.map((source, index) => (
+                      <li key={`${source}-${index}`}>{source}</li>
+                    ))}
+                  </ol>
+                </div>
+              </div>
+            )}
+          </>
+        )}
       </div>
     </div>
   );
