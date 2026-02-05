@@ -4,6 +4,7 @@ import remarkGfm from 'remark-gfm';
 import { Send, GraduationCap, Loader2, Sparkles, Globe, FileText, Zap } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
+import ColorThief from 'color-thief-browser';
 
 interface Message {
   role: 'user' | 'model';
@@ -35,6 +36,12 @@ function App() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [status, setStatus] = useState<string>('');
   const [isStreaming, setIsStreaming] = useState(false);
+  const [slideTheme, setSlideTheme] = useState({
+    accent: '#2563eb',
+    accentSoft: '#EEF2FF',
+    bg1: '#F8FAFC',
+    bg2: '#EEF2FF'
+  });
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const slidesRef = useRef<HTMLDivElement>(null);
 
@@ -143,6 +150,13 @@ function App() {
   const latestReport = [...messages].reverse().find(msg => msg.role === 'model' && msg.content.trim());
   const latestUserPrompt = [...messages].reverse().find(msg => msg.role === 'user')?.content ?? 'Research Report';
 
+  const defaultTheme = {
+    accent: '#2563eb',
+    accentSoft: '#EEF2FF',
+    bg1: '#F8FAFC',
+    bg2: '#EEF2FF'
+  };
+
   const getHostTitle = (url: string) => {
     try {
       const host = new URL(url).hostname.replace('www.', '');
@@ -152,44 +166,64 @@ function App() {
     }
   };
 
-  const getBrandTheme = (text: string, sources?: string[]) => {
-    const lower = text.toLowerCase();
-    const sourceText = (sources || []).join(' ').toLowerCase();
-    const combined = `${lower} ${sourceText}`;
-
-    if (combined.includes('reddit')) {
-      return {
-        accent: '#FF4500',
-        accentSoft: '#FFF1E8',
-        bg1: '#FFF8F5',
-        bg2: '#FFE9DC'
-      };
-    }
-    if (combined.includes('nvidia')) {
-      return {
-        accent: '#76B900',
-        accentSoft: '#F2F9E8',
-        bg1: '#F7FBF2',
-        bg2: '#EAF4DA'
-      };
-    }
-    if (combined.includes('apple')) {
-      return {
-        accent: '#111827',
-        accentSoft: '#F3F4F6',
-        bg1: '#F8FAFC',
-        bg2: '#EEF2F7'
-      };
-    }
-    return {
-      accent: '#2563eb',
-      accentSoft: '#EEF2FF',
-      bg1: '#F8FAFC',
-      bg2: '#EEF2FF'
-    };
+  const getPrimaryDomain = (sources?: string[]) => {
+    if (!sources || sources.length === 0) return null;
+    const counts = new Map<string, number>();
+    sources.forEach(source => {
+      try {
+        const host = new URL(source).hostname.replace('www.', '');
+        counts.set(host, (counts.get(host) || 0) + 1);
+      } catch {
+        return;
+      }
+    });
+    if (counts.size === 0) return null;
+    return [...counts.entries()].sort((a, b) => b[1] - a[1])[0][0];
   };
 
-  const slideTheme = getBrandTheme(latestUserPrompt, latestReport?.sources);
+  const toHex = (value: number) => value.toString(16).padStart(2, '0');
+
+  const rgbToHex = (rgb: number[]) => {
+    const [r, g, b] = rgb.map(c => Math.max(0, Math.min(255, Math.round(c))));
+    return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+  };
+
+  const mixColors = (rgb: number[], weight: number, mixWith = [255, 255, 255]) => {
+    return rgb.map((c, i) => Math.round(c * (1 - weight) + mixWith[i] * weight));
+  };
+
+  useEffect(() => {
+    const domain = getPrimaryDomain(latestReport?.sources);
+    if (!domain) {
+      setSlideTheme(defaultTheme);
+      return;
+    }
+
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.src = `https://www.google.com/s2/favicons?sz=128&domain_url=${domain}`;
+
+    img.onload = () => {
+      try {
+        const thief = new ColorThief();
+        const palette = thief.getPalette(img, 3);
+        const accentRgb = palette?.[0] || thief.getColor(img);
+        const accentSoftRgb = mixColors(accentRgb, 0.85);
+        const bg1Rgb = mixColors(accentRgb, 0.95);
+        const bg2Rgb = mixColors(accentRgb, 0.9);
+        setSlideTheme({
+          accent: rgbToHex(accentRgb),
+          accentSoft: rgbToHex(accentSoftRgb),
+          bg1: rgbToHex(bg1Rgb),
+          bg2: rgbToHex(bg2Rgb)
+        });
+      } catch {
+        setSlideTheme(defaultTheme);
+      }
+    };
+
+    img.onerror = () => setSlideTheme(defaultTheme);
+  }, [latestReport?.sources?.join('|') ?? '', latestUserPrompt]);
 
   const stripSourcesSection = (content: string) => {
     const pattern = /\n(?:#{1,3}\s*)?Sources\s*\n[\s\S]*$/i;
