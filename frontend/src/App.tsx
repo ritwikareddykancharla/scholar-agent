@@ -87,6 +87,16 @@ function App() {
                   newMsgs[newMsgs.length - 1].content += data.content;
                   return newMsgs;
                 });
+              } else if (data.type === 'final') {
+                setMessages(prev => {
+                  const newMsgs = [...prev];
+                  const last = newMsgs[newMsgs.length - 1];
+                  last.content = data.content ?? last.content;
+                  if (data.sources) {
+                    last.sources = data.sources;
+                  }
+                  return newMsgs;
+                });
               } else if (data.type === 'status' || data.type === 'log') {
                 setStatus(data.content);
               } else if (data.type === 'sources') {

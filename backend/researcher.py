@@ -2,6 +2,7 @@ import os
 import json
 import asyncio
 import re
+import httpx
 from google import genai
 from google.genai import types
 from pydantic import BaseModel
@@ -50,6 +51,133 @@ class ScholarAgent:
             if isinstance(value, tuple):
                 return list(value)
             return [value]
+
+        def _is_redirect(url: str) -> bool:
+            return "vertexaisearch.cloud.google.com/grounding-api-redirect" in url
+
+        def _clean_url(url: str | None) -> str | None:
+            if not url:
+                return None
+            if url == "http://www.w3.org/2000/svg":
+                return None
+            return url
+
+        def _filter_sources(urls: list[str]) -> list[str]:
+            cleaned = []
+            for url in urls:
+                url = _clean_url(url)
+                if not url:
+                    continue
+                if _is_redirect(url):
+                    continue
+                cleaned.append(url)
+            # Preserve order while deduping
+            seen = set()
+            ordered = []
+            for url in cleaned:
+                if url in seen:
+                    continue
+                seen.add(url)
+                ordered.append(url)
+            return ordered
+
+        async def _resolve_redirects(urls: list[str]) -> list[str]:
+            if not urls:
+                return []
+
+            sem = asyncio.Semaphore(4)
+
+            async def fetch(u: str, client: httpx.AsyncClient) -> str:
+                async with sem:
+                    try:
+                        resp = await client.get(u)
+                        return str(resp.url)
+                    except Exception:
+                        return u
+
+            async with httpx.AsyncClient(
+                follow_redirects=True,
+                timeout=3.0,
+                headers={"User-Agent": "ScholarAgent/1.0"}
+            ) as client:
+                tasks = [fetch(u, client) for u in urls]
+                return await asyncio.gather(*tasks)
+
+        def _extract_grounding_metadata(resp):
+            candidates = _ensure_list(_get(resp, "candidates"))
+            for cand in candidates:
+                gm = _get(cand, "grounding_metadata", "groundingMetadata")
+                if gm:
+                    return gm
+            return None
+
+        def _parse_grounding(gm):
+            chunks = _ensure_list(_get(gm, "grounding_chunks", "groundingChunks"))
+            supports = _ensure_list(_get(gm, "grounding_supports", "groundingSupports"))
+
+            chunk_urls = []
+            for chunk in chunks:
+                web = _get(chunk, "web", "web_result", "webResult")
+                uri = _get(web, "uri", "url") if web else None
+                uri = _clean_url(uri or _get(chunk, "uri", "url"))
+                chunk_urls.append(uri)
+
+            normalized_supports = []
+            for support in supports:
+                seg = _get(support, "segment")
+                start = _get(seg, "start_index", "startIndex") if seg else None
+                end = _get(seg, "end_index", "endIndex") if seg else None
+                indices = _ensure_list(_get(support, "grounding_chunk_indices", "groundingChunkIndices"))
+                normalized_supports.append({
+                    "start": start,
+                    "end": end,
+                    "indices": [i for i in indices if isinstance(i, int)]
+                })
+
+            return chunk_urls, normalized_supports
+
+        def _build_source_map(chunk_urls: list[str]):
+            sources: list[str] = []
+            index_map: dict[int, int] = {}
+            seen: dict[str, int] = {}
+            for idx, url in enumerate(chunk_urls):
+                if not url:
+                    continue
+                if url in seen:
+                    index_map[idx] = seen[url]
+                    continue
+                sources.append(url)
+                index = len(sources)
+                seen[url] = index
+                index_map[idx] = index
+            return sources, index_map
+
+        def _insert_citations(text: str, supports, index_map) -> str:
+            if not supports or not index_map:
+                return text
+            inserts: dict[int, set[int]] = {}
+            for support in supports:
+                end = support.get("end")
+                if end is None:
+                    continue
+                numbers = [index_map[i] for i in support.get("indices", []) if i in index_map]
+                if not numbers:
+                    continue
+                pos = max(0, min(int(end), len(text)))
+                inserts.setdefault(pos, set()).update(numbers)
+
+            if not inserts:
+                return text
+
+            out = []
+            last = 0
+            for pos in sorted(inserts.keys()):
+                out.append(text[last:pos])
+                marker = "".join([f"[{n}]" for n in sorted(inserts[pos])])
+                out.append(f" {marker}")
+                last = pos
+            out.append(text[last:])
+            return "".join(out)
 
         def _extract_grounding_urls(resp) -> set[str]:
             urls = set()
@@ -135,11 +263,15 @@ class ScholarAgent:
 
             source_set = set()
             full_response_text = ""
+            last_grounding = None
             for chunk in response_stream:
                 for url in _extract_grounding_urls(chunk):
                     source_set.add(url)
                 for url in _extract_urls(chunk):
                     source_set.add(url)
+                gm = _extract_grounding_metadata(chunk)
+                if gm:
+                    last_grounding = gm
                 if chunk.text:
                     full_response_text += chunk.text
                     yield json.dumps({"type": "token", "content": chunk.text}) + "\n"
@@ -149,39 +281,38 @@ class ScholarAgent:
                             query = fc.args.get("query", "Unknown query")
                             yield json.dumps({"type": "log", "content": f"Searching for: {query}"}) + "\n"
             
-            if not source_set:
-                # --- FINAL SOURCE CHECK (fallback) ---
-                yield json.dumps({"type": "status", "content": "Verifying sources..."}) + "\n"
-                
-                source_extraction_prompt = f"""
-                Here is a research report:
-                ---
-                {full_response_text}
-                ---
-                Based on the grounding metadata and context available to you from the previous turn, list all the original source URLs that were used to generate this text.
-                Provide your response as a JSON object with a single key "sources" which is an array of strings.
-                Example: {{"sources": ["https://www.example.com/article1", "https://en.wikipedia.org/wiki/RNA"]}}
-                """
-                
-                source_context = contents + [types.Content(role="model", parts=[types.Part.from_text(full_response_text)])]
-                source_context.append(types.Content(role="user", parts=[types.Part.from_text(source_extraction_prompt)]))
+            cited_text = full_response_text
+            sources_list: list[str] = []
 
-                source_response = self.client.models.generate_content(
-                    model=self.flash_model,
-                    contents=source_context,
-                    config={'response_mime_type': 'application/json'}
-                )
+            if last_grounding:
+                chunk_urls, supports = _parse_grounding(last_grounding)
+                resolved = await _resolve_redirects([u for u in chunk_urls if u])
+                # put resolved urls back in the same order
+                resolved_iter = iter(resolved)
+                normalized_chunk_urls = []
+                for url in chunk_urls:
+                    if url:
+                        resolved_url = _clean_url(next(resolved_iter))
+                        if resolved_url and _is_redirect(resolved_url):
+                            resolved_url = None
+                        normalized_chunk_urls.append(resolved_url)
+                    else:
+                        normalized_chunk_urls.append(None)
+                sources_list, index_map = _build_source_map(normalized_chunk_urls)
+                cited_text = _insert_citations(full_response_text, supports, index_map)
 
-                try:
-                    sources_data = json.loads(source_response.text)
-                    if "sources" in sources_data and isinstance(sources_data["sources"], list):
-                        for url in sources_data["sources"]:
-                            source_set.add(url)
-                except (json.JSONDecodeError, KeyError):
-                    yield json.dumps({"type": "log", "content": "Could not verify sources with final check."}) + "\n"
+            if not sources_list and source_set:
+                sources_list = _filter_sources(sorted(source_set))
 
-            if source_set:
-                yield json.dumps({"type": "sources", "content": sorted(source_set)}) + "\n"
+            if sources_list:
+                sources_list = _filter_sources(sources_list)
+
+            if sources_list:
+                yield json.dumps({
+                    "type": "final",
+                    "content": cited_text,
+                    "sources": sources_list
+                }) + "\n"
 
         except Exception as e:
             yield json.dumps({"type": "error", "content": str(e)}) + "\n"
