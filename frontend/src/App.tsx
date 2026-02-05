@@ -123,10 +123,23 @@ function App() {
                       fallbackTitles[index + 1] = extractedTitles[index + 1] || getHostTitle(source);
                     });
                   }
-                  last.sourceTitles = { ...fallbackTitles, ...extractedTitles };
-                  last.content = stripSourcesSection(rawContent);
-                  if (data.sources) {
+                  if (data.sources && data.sources.length > 0) {
+                    last.sourceTitles = { ...fallbackTitles, ...extractedTitles };
+                    last.content = stripSourcesSection(rawContent);
                     last.sources = data.sources;
+                  } else {
+                    const parsed = extractSourcesFromContent(rawContent);
+                    if (parsed.sources.length > 0) {
+                      const parsedTitles: Record<number, string> = {};
+                      parsed.sources.forEach((source, index) => {
+                        parsedTitles[index + 1] = parsed.titles[index + 1] || getHostTitle(source);
+                      });
+                      last.sourceTitles = parsedTitles;
+                      last.sources = parsed.sources;
+                      last.content = stripSourcesSection(rawContent);
+                    } else {
+                      last.content = rawContent;
+                    }
                   }
                   return newMsgs;
                 });
@@ -243,6 +256,55 @@ function App() {
   const stripSourcesSection = (content: string) => {
     const pattern = /\n(?:#{1,3}\s*)?Sources\s*\n[\s\S]*$/i;
     return content.replace(pattern, '').trim();
+  };
+
+  const extractSourcesFromContent = (content: string) => {
+    const sources: string[] = [];
+    const titles: Record<number, string> = {};
+    const lines = content.split('\n');
+    let inSources = false;
+    let pendingIndex: number | null = null;
+
+    for (const rawLine of lines) {
+      const line = rawLine.trim();
+      if (!line) continue;
+      if (/^(#{1,3}\s*)?Sources$/i.test(line)) {
+        if (inSources) break;
+        inSources = true;
+        continue;
+      }
+      if (!inSources) continue;
+
+      const urlMatch = line.match(/https?:\/\/[^\s)]+/);
+      if (urlMatch) {
+        const url = urlMatch[0].replace(/[.,)]$/, '');
+        if (!sources.includes(url)) {
+          sources.push(url);
+        }
+        if (pendingIndex !== null && titles[pendingIndex]) {
+          pendingIndex = null;
+        }
+        continue;
+      }
+
+      const titledMatch = line.match(/^\[(\d+)\]\s+(.*?)(?:\s+—\s+|\s+-\s+)?(https?:\/\/\S+)?$/);
+      if (titledMatch) {
+        const index = parseInt(titledMatch[1], 10);
+        const title = titledMatch[2].trim();
+        const url = titledMatch[3];
+        titles[index] = title;
+        if (url) {
+          const cleanedUrl = url.replace(/[.,)]$/, '');
+          if (!sources.includes(cleanedUrl)) {
+            sources.push(cleanedUrl);
+          }
+        } else {
+          pendingIndex = index;
+        }
+      }
+    }
+
+    return { sources, titles };
   };
 
   const extractSourceTitles = (content: string) => {
