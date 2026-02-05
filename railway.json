@@ -2,7 +2,7 @@
   "$schema": "https://railway.app/tools/railway.schema.json",
   "build": {
     "builder": "RAILPACK",
-    "buildCommand": "cd frontend && bun install && bun run build"
+    "buildCommand": "curl -fsSL https://bun.sh/install | bash && export BUN_INSTALL=\"$HOME/.bun\" && export PATH=\"$BUN_INSTALL/bin:$PATH\" && cd frontend && bun install && bun run build"
   },
   "deploy": {
     "startCommand": "python3 -m uvicorn backend.main:app --host 0.0.0.0 --port $PORT",
