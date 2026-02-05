@@ -98,26 +98,28 @@ class ScholarAgent:
             )
 
             for chunk in response_stream:
-                # Check if the chunk has grounding metadata (search results)
+                sources = []
+                # Check for valid grounding metadata to extract correct source URLs
                 if chunk.candidates and chunk.candidates[0].grounding_metadata:
-                    # Search happened!
-                    chunks = chunk.candidates[0].grounding_metadata.grounding_chunks
-                    if chunks:
-                        yield json.dumps({"type": "status", "content": "Reading search results..."}) + "\n"
-                        # We can send sources immediately if we want
-                        sources = [c.web.uri for c in chunks if c.web]
-                        if sources:
-                             yield json.dumps({"type": "sources", "content": sources}) + "\n"
+                    chunks_data = chunk.candidates[0].grounding_metadata.grounding_chunks
+                    if chunks_data:
+                        raw_sources = [c.web.uri for c in chunks_data if c.web and c.web.uri]
+                        # Clean up and deduplicate
+                        sources = sorted(list(set(raw_sources)))
+
+                if sources:
+                     yield json.dumps({"type": "sources", "content": sources}) + "\n"
 
                 # Check for text content
                 if chunk.text:
                     yield json.dumps({"type": "token", "content": chunk.text}) + "\n"
                 
-                # Check for function calls (if using manual tools, but here Google Search is auto)
-                # If function_calls exists, it means it's asking to search
+                # Log search queries if the model makes a function call
                 if chunk.function_calls:
                      for fc in chunk.function_calls:
-                         yield json.dumps({"type": "log", "content": f"Searching: {fc.args}"}) + "\n"
+                         if fc.name == "google_search":
+                            query = fc.args.get("query", "Unknown query")
+                            yield json.dumps({"type": "log", "content": f"Searching for: {query}"}) + "\n"
 
         except Exception as e:
             yield json.dumps({"type": "error", "content": str(e)}) + "\n"
