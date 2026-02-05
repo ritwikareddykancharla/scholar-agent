@@ -1,17 +1,35 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+
 :root {
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
-  background-color: #f3f4f6; /* Light gray background */
-  color: #1a1a1a;
 }
-body { margin: 0; min-height: 100vh; }
-#root { width: 100%; height: 100vh; }
-
-/* Simple prose styling for markdown */
-.prose p { margin-bottom: 0.75em; margin-top: 0; }
-.prose h1, .prose h2, .prose h3 { margin-top: 1.5em; margin-bottom: 0.5em; font-weight: 700; }
-.prose ul, .prose ol { padding-left: 1.5em; margin-bottom: 0.75em; }
-.prose li { margin-bottom: 0.25em; }
-.prose code { background: #f1f5f9; padding: 0.2em 0.4em; borderRadius: 4px; font-family: monospace; font-size: 0.9em; }
-.prose pre { background: #1e293b; color: white; padding: 1em; borderRadius: 8px; overflow-x: auto; }
-.prose pre code { background: transparent; padding: 0; color: inherit; }
-.prose blockquote { border-left: 4px solid #e5e7eb; padding-left: 1em; color: #6b7280; font-style: italic; }
+body { margin: 0; }
+.prose-invert {
+    color: #d4d4d8;
+}
+.prose-invert h1, .prose-invert h2, .prose-invert h3 {
+    color: #fafafa;
+    margin-bottom: 0.5em;
+    margin-top: 1.2em;
+}
+.prose-invert p {
+    margin: 1em 0;
+}
+.prose-invert a {
+    color: #c084fc;
+}
+.prose-invert code {
+    background-color: #27272a;
+    padding: 0.2em 0.4em;
+    border-radius: 4px;
+    font-size: 0.9em;
+}
+.prose-invert pre {
+    background-color: #18181b;
+    border: 1px solid #3f3f46;
+    padding: 1em;
+    border-radius: 0.5rem;
+}
+.prose-invert ul, .prose-invert ol {
+    margin: 1em 0;
+}

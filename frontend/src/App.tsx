@@ -1,7 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
-import axios from 'axios';
 import ReactMarkdown from 'react-markdown';
-import { Send, User, Bot, GraduationCap, Loader2, ExternalLink } from 'lucide-react';
+import { Send, GraduationCap, Loader2, Sparkles, Globe, Cpu } from 'lucide-react';
 
 interface Message {
   role: 'user' | 'model';
@@ -12,7 +11,8 @@ interface Message {
 function App() {
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [status, setStatus] = useState<string>(''); // For "Thinking..."
+  const [isStreaming, setIsStreaming] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -21,158 +21,203 @@ function App() {
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages]);
+  }, [messages, status]);
 
   const handleSend = async () => {
-    if (!input.trim()) return;
+    if (!input.trim() || isStreaming) return;
 
     const userMsg: Message = { role: 'user', content: input };
     setMessages(prev => [...prev, userMsg]);
     setInput('');
-    setLoading(true);
+    setIsStreaming(true);
+    setStatus('Initializing Scholar...');
 
     try {
-      // Prepare history for backend (excluding sources, just content)
-      const apiMessages = [...messages, userMsg].map(m => ({
-        role: m.role,
-        content: m.content
-      }));
-
-      const response = await axios.post('/api/chat', {
-        messages: apiMessages
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: messages.concat(userMsg).map(m => ({ role: m.role, content: m.content }))
+        })
       });
 
-      const botMsg: Message = {
-        role: 'model',
-        content: response.data.response,
-        sources: response.data.sources
-      };
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
       
-      setMessages(prev => [...prev, botMsg]);
+      if (!reader) throw new Error("No reader");
+
+      // Create a placeholder bot message
+      setMessages(prev => [...prev, { role: 'model', content: '', sources: [] }]);
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value);
+        const lines = chunk.split('\n');
+
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          try {
+            const data = JSON.parse(line);
+            
+            if (data.type === 'token') {
+              setMessages(prev => {
+                const newMsgs = [...prev];
+                const lastMsg = newMsgs[newMsgs.length - 1];
+                if (lastMsg.role === 'model') {
+                  lastMsg.content += data.content;
+                }
+                return newMsgs;
+              });
+            } else if (data.type === 'status' || data.type === 'log') {
+              setStatus(data.content);
+            } else if (data.type === 'sources') {
+              setMessages(prev => {
+                const newMsgs = [...prev];
+                const lastMsg = newMsgs[newMsgs.length - 1];
+                lastMsg.sources = (lastMsg.sources || []).concat(data.content);
+                return newMsgs;
+              });
+            } else if (data.type === 'error') {
+              console.error(data.content);
+            }
+          } catch (e) {
+            console.error("Parse error", e);
+          }
+        }
+      }
     } catch (error) {
       console.error(error);
-      const errorMsg: Message = { role: 'model', content: "Error: Could not connect to the Scholar." };
-      setMessages(prev => [...prev, errorMsg]);
     } finally {
-      setLoading(false);
+      setIsStreaming(false);
+      setStatus('');
     }
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', maxWidth: '1000px', margin: '0 auto', background: '#ffffff', boxShadow: '0 0 20px rgba(0,0,0,0.05)' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: '#09090b', color: '#e4e4e7', fontFamily: 'Inter, sans-serif' }}>
+      
       {/* Header */}
-      <header style={{ padding: '1.5rem', borderBottom: '1px solid #e5e7eb', display: 'flex', alignItems: 'center', gap: '1rem', background: 'white', zIndex: 10 }}>
-        <div style={{ background: '#4f46e5', padding: '0.5rem', borderRadius: '0.5rem' }}>
+      <header style={{ padding: '1rem 2rem', borderBottom: '1px solid #27272a', display: 'flex', alignItems: 'center', gap: '1rem', background: '#09090b', zIndex: 10 }}>
+        <div style={{ background: 'linear-gradient(135deg, #a855f7, #6366f1)', padding: '0.5rem', borderRadius: '0.5rem' }}>
           <GraduationCap color="white" size={24} />
         </div>
         <div>
-          <h1 style={{ fontSize: '1.25rem', fontWeight: 'bold', margin: 0 }}>The Scholar</h1>
-          <p style={{ margin: 0, color: '#6b7280', fontSize: '0.875rem' }}>Context-Aware Research Agent</p>
+          <h1 style={{ fontSize: '1.25rem', fontWeight: 'bold', margin: 0, letterSpacing: '-0.02em' }}>The Scholar</h1>
+          <p style={{ margin: 0, color: '#a1a1aa', fontSize: '0.8rem' }}>Recursive Research Engine</p>
         </div>
       </header>
 
       {/* Chat Area */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '2rem', display: 'flex', flexDirection: 'column', gap: '1.5rem', background: '#f9fafb' }}>
+      <div style={{ flex: 1, overflowY: 'auto', padding: '2rem 0', maxWidth: '800px', margin: '0 auto', width: '100%' }}>
         {messages.length === 0 && (
-          <div style={{ textAlign: 'center', color: '#9ca3af', marginTop: '5rem' }}>
-            <GraduationCap size={64} style={{ margin: '0 auto 1rem auto', opacity: 0.2 }} />
-            <p>Start your research session.<br/>Ask a complex question.</p>
+          <div style={{ textAlign: 'center', marginTop: '8rem', opacity: 0.5 }}>
+            <div style={{ background: '#18181b', display: 'inline-block', padding: '1.5rem', borderRadius: '2rem', marginBottom: '1.5rem' }}>
+              <Sparkles size={48} color="#a855f7" />
+            </div>
+            <h2 style={{ fontSize: '1.5rem', fontWeight: '600', marginBottom: '0.5rem' }}>Deep Research</h2>
+            <p style={{ color: '#a1a1aa' }}>Powered by Gemini 2.0 Flash</p>
           </div>
         )}
-        
-        {messages.map((msg, idx) => (
-          <div key={idx} style={{ display: 'flex', gap: '1rem', flexDirection: msg.role === 'user' ? 'row-reverse' : 'row' }}>
-            <div style={{ 
-              width: '32px', height: '32px', borderRadius: '50%', 
-              background: msg.role === 'user' ? '#1f2937' : '#4f46e5',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              flexShrink: 0
-            }}>
-              {msg.role === 'user' ? <User size={16} color="white" /> : <Bot size={16} color="white" />}
-            </div>
-            
-            <div style={{ 
-              maxWidth: '80%', 
-              background: msg.role === 'user' ? '#1f2937' : 'white', 
-              color: msg.role === 'user' ? 'white' : '#1f2937',
-              padding: '1rem 1.5rem', 
-              borderRadius: '1rem',
-              borderTopRightRadius: msg.role === 'user' ? '0' : '1rem',
-              borderTopLeftRadius: msg.role === 'model' ? '0' : '1rem',
-              boxShadow: msg.role === 'model' ? '0 2px 4px rgba(0,0,0,0.05)' : 'none'
-            }}>
-              <div className="prose" style={{ lineHeight: 1.6 }}>
-                <ReactMarkdown>{msg.content}</ReactMarkdown>
-              </div>
 
-              {msg.sources && msg.sources.length > 0 && (
-                <div style={{ marginTop: '1rem', paddingTop: '0.5rem', borderTop: '1px solid #e5e7eb', fontSize: '0.85rem' }}>
-                  <p style={{ fontWeight: 'bold', marginBottom: '0.5rem', color: '#6b7280' }}>Sources:</p>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
-                    {msg.sources.map((src, i) => (
-                      <a key={i} href={src} target="_blank" rel="noopener noreferrer" style={{ 
-                        display: 'flex', alignItems: 'center', gap: '0.25rem', 
-                        color: '#4f46e5', textDecoration: 'none', background: '#eef2ff', 
-                        padding: '0.25rem 0.5rem', borderRadius: '0.25rem' 
-                      }}>
-                        <ExternalLink size={10} /> {new URL(src).hostname}
-                      </a>
-                    ))}
-                  </div>
-                </div>
-              )}
+        {messages.map((msg, idx) => (
+          <div key={idx} style={{ padding: '1.5rem 2rem', borderBottom: msg.role === 'user' ? 'none' : '1px solid #27272a' }}>
+            <div style={{ display: 'flex', gap: '1.5rem' }}>
+              <div style={{ 
+                width: '32px', height: '32px', borderRadius: '0.5rem', 
+                background: msg.role === 'user' ? '#27272a' : 'linear-gradient(135deg, #a855f7, #6366f1)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                fontSize: '0.9rem', fontWeight: 'bold'
+              }}>
+                {msg.role === 'user' ? 'U' : 'AI'}
+              </div>
+              
+              <div style={{ flex: 1, lineHeight: 1.7, fontSize: '1rem' }}>
+                {msg.role === 'user' ? (
+                  <p style={{ margin: 0, fontSize: '1.1rem' }}>{msg.content}</p>
+                ) : (
+                  <>
+                    <div className="prose prose-invert">
+                      <ReactMarkdown>{msg.content}</ReactMarkdown>
+                    </div>
+                    {msg.sources && msg.sources.length > 0 && (
+                      <div style={{ marginTop: '1.5rem', paddingTop: '1rem', borderTop: '1px solid #27272a' }}>
+                        <p style={{ fontSize: '0.8rem', color: '#a1a1aa', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                          <Globe size={14} /> Sources
+                        </p>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                          {[...new Set(msg.sources)].map((src, i) => (
+                            <a key={i} href={src} target="_blank" rel="noreferrer" style={{ 
+                              background: '#18181b', color: '#a855f7', padding: '0.25rem 0.75rem', 
+                              borderRadius: '1rem', fontSize: '0.75rem', textDecoration: 'none',
+                              border: '1px solid #3f3f46'
+                            }}>
+                              {new URL(src).hostname.replace('www.', '')}
+                            </a>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
             </div>
           </div>
         ))}
-        {loading && (
-          <div style={{ display: 'flex', gap: '1rem' }}>
-             <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: '#4f46e5', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Bot size={16} color="white" />
-            </div>
-            <div style={{ background: 'white', padding: '1rem', borderRadius: '1rem', borderTopLeftRadius: 0, boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
-              <Loader2 className="animate-spin" size={20} color="#4f46e5" />
-            </div>
+
+        {/* Status Indicator */}
+        {status && (
+          <div style={{ padding: '1rem 2rem 1rem 5rem', display: 'flex', alignItems: 'center', gap: '0.75rem', color: '#a1a1aa' }}>
+            <Loader2 className="animate-spin" size={16} />
+            <span style={{ fontSize: '0.9rem', fontFamily: 'monospace' }}>{status}</span>
           </div>
         )}
         <div ref={messagesEndRef} />
       </div>
 
       {/* Input Area */}
-      <div style={{ padding: '1.5rem', background: 'white', borderTop: '1px solid #e5e7eb' }}>
-        <div style={{ display: 'flex', gap: '0.75rem', maxWidth: '100%', position: 'relative' }}>
+      <div style={{ padding: '2rem', background: '#09090b' }}>
+        <div style={{ maxWidth: '800px', margin: '0 auto', position: 'relative' }}>
           <input
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyPress={(e) => e.key === 'Enter' && handleSend()}
-            placeholder="Type your follow-up question..."
+            placeholder="Ask anything..."
+            disabled={isStreaming}
             style={{
-              flex: 1,
-              padding: '1rem 1.25rem',
-              borderRadius: '0.75rem',
-              border: '2px solid #e5e7eb',
+              width: '100%',
+              padding: '1rem 3.5rem 1rem 1.5rem',
+              borderRadius: '1.5rem',
+              background: '#18181b',
+              border: '1px solid #27272a',
+              color: 'white',
               fontSize: '1rem',
               outline: 'none',
+              boxShadow: '0 4px 12px rgba(0,0,0,0.2)'
             }}
           />
           <button
             onClick={handleSend}
-            disabled={loading || !input}
+            disabled={isStreaming || !input}
             style={{
-              padding: '0 1.5rem',
-              background: '#4f46e5',
+              position: 'absolute', right: '0.75rem', top: '0.5rem',
+              background: '#a855f7',
               color: 'white',
               border: 'none',
-              borderRadius: '0.75rem',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              transition: 'background 0.2s'
+              borderRadius: '50%',
+              width: '2.5rem', height: '2.5rem',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              cursor: isStreaming ? 'not-allowed' : 'pointer',
+              opacity: isStreaming ? 0.5 : 1
             }}
           >
-            <Send size={20} />
+            <Send size={18} />
           </button>
         </div>
+        <p style={{ textAlign: 'center', color: '#52525b', fontSize: '0.75rem', marginTop: '1rem' }}>
+          Gemini 3 Hackathon • The Scholar
+        </p>
       </div>
     </div>
   );

@@ -1,19 +1,16 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
 import os
 import sys
+import json
 
 # --- Fix Import Paths ---
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from researcher import scholar, ChatRequest, ChatResponse
+from researcher import scholar, ChatRequest
 
 app = FastAPI(title="Scholar Agent API")
-
-@app.get("/health")
-async def health():
-    return {"status": "ok", "cwd": os.getcwd()}
 
 app.add_middleware(
     CORSMiddleware,
@@ -23,19 +20,26 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-@app.post("/api/chat", response_model=ChatResponse)
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
+
+@app.post("/api/chat")
 async def chat_endpoint(request: ChatRequest):
     try:
-        result = await scholar.chat(request)
-        return result
+        return StreamingResponse(
+            scholar.chat_stream(request), 
+            media_type="application/x-ndjson"
+        )
     except Exception as e:
         print(f"Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        return StreamingResponse(
+            iter([json.dumps({"type": "error", "content": str(e)}) + "\n"]),
+            media_type="application/x-ndjson"
+        )
 
 # --- Serve Frontend ---
 frontend_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend", "dist")
-print(f"DEBUG: Looking for frontend at: {frontend_path}")
-print(f"DEBUG: Exists? {os.path.exists(frontend_path)}")
 
 if os.path.exists(frontend_path):
     app.mount("/assets", StaticFiles(directory=os.path.join(frontend_path, "assets")), name="assets")
@@ -48,7 +52,7 @@ if os.path.exists(frontend_path):
 else:
     @app.get("/")
     async def root():
-        return {"message": "Scholar Backend running. Frontend not found (Docker build should have created it)."}
+        return {"message": "Scholar Backend running. Frontend not found."}
 
 if __name__ == "__main__":
     import uvicorn
