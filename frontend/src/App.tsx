@@ -97,10 +97,23 @@ function App() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: '#09090b', color: '#e4e4e7', fontFamily: 'Inter, sans-serif' }}>
-      
-      {/* Header (Same as before) */}
-      <header style={{ padding: '1rem 2rem', borderBottom: '1px solid #27272a', display: 'flex', alignItems: 'center', gap: '1rem', background: '#09090b', zIndex: 10 }}>
-        {/* ... Header content ... */}
+      <header style={{ padding: '1rem 2rem', borderBottom: '1px solid #27272a', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#09090b', zIndex: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'linear-gradient(135deg, #a855f7, #6366f1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <GraduationCap size={18} />
+          </div>
+          <div>
+            <div style={{ fontWeight: 700, letterSpacing: '0.3px' }}>The Scholar</div>
+            <div style={{ fontSize: '0.85rem', color: '#a1a1aa', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <Sparkles size={14} />
+              Research with citations
+            </div>
+          </div>
+        </div>
+        <div style={{ fontSize: '0.85rem', color: '#a1a1aa', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <Globe size={14} />
+          Grounded web search
+        </div>
       </header>
       
       {/* Chat Area - Layout Fixed */}
@@ -143,9 +156,52 @@ function App() {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input Area (Same as before) */}
-      <div style={{ padding: '2rem', background: '#09090b' }}>
-        {/* ... Input content ... */}
+      <div style={{ padding: '1.5rem 2rem', background: '#09090b', borderTop: '1px solid #27272a' }}>
+        <div style={{ maxWidth: '800px', margin: '0 auto', display: 'flex', gap: '0.75rem' }}>
+          <textarea
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                handleSend();
+              }
+            }}
+            placeholder="Ask a research question..."
+            style={{
+              flex: 1,
+              minHeight: '56px',
+              maxHeight: '160px',
+              resize: 'vertical',
+              borderRadius: '0.75rem',
+              border: '1px solid #3f3f46',
+              background: '#0f0f11',
+              color: '#e4e4e7',
+              padding: '0.9rem 1rem',
+              fontSize: '0.95rem',
+              outline: 'none'
+            }}
+            disabled={isStreaming}
+          />
+          <button
+            onClick={handleSend}
+            disabled={isStreaming || !input.trim()}
+            style={{
+              width: '56px',
+              height: '56px',
+              borderRadius: '0.75rem',
+              border: '1px solid #3f3f46',
+              background: isStreaming || !input.trim() ? '#18181b' : 'linear-gradient(135deg, #a855f7, #6366f1)',
+              color: '#e4e4e7',
+              cursor: isStreaming || !input.trim() ? 'not-allowed' : 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}
+          >
+            {isStreaming ? <Loader2 className="animate-spin" size={18} /> : <Send size={18} />}
+          </button>
+        </div>
       </div>
     </div>
   );
