@@ -65,7 +65,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y cloc
       - name: Count lines of code
-        run: cloc backend frontend --report-file=cloc.txt --json > cloc.json
+        run: |
+          cloc backend frontend --report-file=cloc.txt
+          cloc backend frontend --json --quiet > cloc.json
       - name: Upload report
         uses: actions/upload-artifact@v4
         with:

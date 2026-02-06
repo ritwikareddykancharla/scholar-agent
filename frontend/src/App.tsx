@@ -13,6 +13,24 @@ interface Message {
   sourceTitles?: Record<number, string>;
 }
 
+const defaultTheme = {
+  accent: '#2563eb',
+  accentSoft: '#EEF2FF',
+  bg1: '#F8FAFC',
+  bg2: '#EEF2FF'
+};
+
+const toHex = (value: number) => value.toString(16).padStart(2, '0');
+
+const rgbToHex = (rgb: number[]) => {
+  const [r, g, b] = rgb.map(c => Math.max(0, Math.min(255, Math.round(c))));
+  return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+};
+
+const mixColors = (rgb: number[], weight: number, mixWith = [255, 255, 255]) => {
+  return rgb.map((c, i) => Math.round(c * (1 - weight) + mixWith[i] * weight));
+};
+
 const samplePrompts = [
   {
     title: 'Market pulse',
@@ -37,12 +55,7 @@ function App() {
   const [status, setStatus] = useState<string>('');
   const [isStreaming, setIsStreaming] = useState(false);
   const [timeline, setTimeline] = useState<{ time: string; label: string }[]>([]);
-  const [slideTheme, setSlideTheme] = useState({
-    accent: '#2563eb',
-    accentSoft: '#EEF2FF',
-    bg1: '#F8FAFC',
-    bg2: '#EEF2FF'
-  });
+  const [slideTheme, setSlideTheme] = useState(defaultTheme);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const reportExportRef = useRef<HTMLDivElement>(null);
 
@@ -91,9 +104,12 @@ function App() {
       setMessages(prev => [...prev, { role: 'model', content: '', sources: [] }]);
 
       let buffer = '';
-      while (true) {
-        const { done, value } = await reader.read();
+      let done = false;
+      while (!done) {
+        const result = await reader.read();
+        done = result.done;
         if (done) break;
+        const value = result.value;
 
         buffer += decoder.decode(value, { stream: true });
 
@@ -211,17 +227,6 @@ function App() {
     });
     if (counts.size === 0) return null;
     return [...counts.entries()].sort((a, b) => b[1] - a[1])[0][0];
-  };
-
-  const toHex = (value: number) => value.toString(16).padStart(2, '0');
-
-  const rgbToHex = (rgb: number[]) => {
-    const [r, g, b] = rgb.map(c => Math.max(0, Math.min(255, Math.round(c))));
-    return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
-  };
-
-  const mixColors = (rgb: number[], weight: number, mixWith = [255, 255, 255]) => {
-    return rgb.map((c, i) => Math.round(c * (1 - weight) + mixWith[i] * weight));
   };
 
   const themeKey = `${latestReport?.sources?.join('|') ?? ''}::${latestUserPrompt}`;
@@ -427,17 +432,6 @@ function App() {
   };
 
   const reportData = normalizedReport ? buildReportData(normalizedReport.content) : null;
-
-  const buildBullets = (lines: string[]) => {
-    const bullets = lines
-      .filter(line => /^[-*]\s+/.test(line) || /^\d+\.\s+/.test(line))
-      .map(line => line.replace(/^[-*]\s+/, '').replace(/^\d+\.\s+/, ''));
-    if (bullets.length > 0) {
-      return bullets.slice(0, 6);
-    }
-    const text = lines.join(' ');
-    return text.split('. ').map(s => s.trim()).filter(Boolean).slice(0, 6);
-  };
 
   const buildReportMarkdown = (msg: Message) => {
     const timestamp = new Date().toLocaleString();
