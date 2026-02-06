@@ -259,9 +259,13 @@ function App() {
   }, [themeKey, latestReport?.sources]);
 
   const stripSourcesSection = (content: string) => {
-    // Match "Sources" section with or without markdown headers
-    // Handles: "Sources\n", "## Sources\n", "### Sources\n" etc.
-    const pattern = /\n?\s*(?:#{1,3}\s*)?Sources\s*\n[\s\S]*$/i;
+    // Match "Sources" section - handles various formats:
+    // - "Sources:\n"
+    // - "## Sources\n"
+    // - "### Sources\n"
+    // - "Sources\n" (with or without colon)
+    // - followed by any content until end
+    const pattern = /\n?\s*(?:#{1,3}\s*)?Sources[:\s]*\n[\s\S]*$/i;
     return content.replace(pattern, '').trim();
   };
 
@@ -352,8 +356,8 @@ function App() {
           sections.push(current);
         }
         current = { title: line.replace(/^#+\s*/, ''), lines: [] };
-      } else if (/^sources$/i.test(line)) {
-        // Skip "Sources" section - it's handled separately
+      } else if (/^sources[:\s]*$/i.test(line)) {
+        // Skip "Sources" section (with or without colon) - it's handled separately
         if (current.lines.length > 0 || current.title !== 'Summary') {
           sections.push(current);
         }
