@@ -584,7 +584,7 @@ function App() {
             <div className="brand-title">The Scholar</div>
             <div className="brand-sub">
               <Sparkles size={14} />
-              Manus-grade research UI
+              AI research assistant
             </div>
           </div>
         </div>
@@ -709,7 +709,7 @@ function App() {
               <div className="empty">
                 <div className="empty-title">Start a research session</div>
                 <div className="empty-sub">
-                  Manus-style clarity, with citations you can trust.
+                  Research with sources you can trust.
                 </div>
                 <div className="prompt-grid">
                   {samplePrompts.map(prompt => (
