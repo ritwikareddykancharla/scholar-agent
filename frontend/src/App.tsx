@@ -4,7 +4,6 @@ import remarkGfm from 'remark-gfm';
 import { Send, GraduationCap, Loader2, Sparkles, Globe, FileText, Zap } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
-import ColorThief from 'color-thief-browser';
 
 interface Message {
   role: 'user' | 'model';
@@ -69,6 +68,12 @@ function App() {
       setActiveTab('report');
     }
   }, [latestReport, isStreaming]);
+
+  useEffect(() => {
+    if (!latestReport) {
+      setActiveTab('chat');
+    }
+  }, [latestReport]);
 
   const handleSend = async () => {
     if (!input.trim() || isStreaming) return;
@@ -242,8 +247,14 @@ function App() {
     img.crossOrigin = 'anonymous';
     img.src = `https://www.google.com/s2/favicons?sz=128&domain_url=${domain}`;
 
-    img.onload = () => {
+    img.onload = async () => {
       try {
+        const module = await import('color-thief-browser');
+        const ColorThief = module.default;
+        if (!ColorThief) {
+          setSlideTheme(defaultTheme);
+          return;
+        }
         const thief = new ColorThief();
         const palette = thief.getPalette(img, 3);
         const accentRgb = palette?.[0] || thief.getColor(img);
