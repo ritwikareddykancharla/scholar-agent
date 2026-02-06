@@ -20,6 +20,7 @@ Powered by **Gemini 2.0 Flash** with **Grounding (Google Search)**, The Scholar 
 * Multi-pass research with visible progress status.
 * Markdown export and **slide-style PDF export** (colorful 16:9 deck).
 * Modern, clean UI optimized for demo recording.
+* **LOC report** generated in GitHub Actions (artifact `cloc-report`).
 
 ## ⚡ Architecture
 
@@ -79,3 +80,7 @@ Visit `http://localhost:5173` to start your research.
 * **Interactive Report View:** Clickable HTML report with inline citations.
 * **Charts & Visuals:** Auto-generate simple charts from key numbers.
 * **PDF Ingestion:** Read academic papers directly.
+
+## 📊 LOC Report (GitHub Actions)
+Every push runs `cloc` in CI and uploads a `cloc-report` artifact.  
+To view it: open the latest GitHub Actions run → Artifacts → `cloc-report`.
