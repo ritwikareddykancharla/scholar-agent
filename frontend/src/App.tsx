@@ -259,7 +259,9 @@ function App() {
   }, [themeKey, latestReport?.sources]);
 
   const stripSourcesSection = (content: string) => {
-    const pattern = /\n(?:#{1,3}\s*)?Sources\s*\n[\s\S]*$/i;
+    // Match "Sources" section with or without markdown headers
+    // Handles: "Sources\n", "## Sources\n", "### Sources\n" etc.
+    const pattern = /\n?\s*(?:#{1,3}\s*)?Sources\s*\n[\s\S]*$/i;
     return content.replace(pattern, '').trim();
   };
 
@@ -350,6 +352,13 @@ function App() {
           sections.push(current);
         }
         current = { title: line.replace(/^#+\s*/, ''), lines: [] };
+      } else if (/^sources$/i.test(line)) {
+        // Skip "Sources" section - it's handled separately
+        if (current.lines.length > 0 || current.title !== 'Summary') {
+          sections.push(current);
+        }
+        current = { title: 'Sources', lines: [] };
+        break; // Stop parsing after Sources header
       } else {
         current.lines.push(line);
       }
@@ -357,7 +366,7 @@ function App() {
     if (current.lines.length > 0 || sections.length === 0) {
       sections.push(current);
     }
-    return sections;
+    return sections.filter(s => !/sources/i.test(s.title));
   };
 
   const extractFirstTable = (content: string) => {
