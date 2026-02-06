@@ -224,6 +224,8 @@ function App() {
     return rgb.map((c, i) => Math.round(c * (1 - weight) + mixWith[i] * weight));
   };
 
+  const themeKey = `${latestReport?.sources?.join('|') ?? ''}::${latestUserPrompt}`;
+
   useEffect(() => {
     const domain = getPrimaryDomain(latestReport?.sources);
     if (!domain) {
@@ -255,7 +257,7 @@ function App() {
     };
 
     img.onerror = () => setSlideTheme(defaultTheme);
-  }, [latestReport?.sources?.join('|') ?? '', latestUserPrompt]);
+  }, [themeKey]);
 
   const stripSourcesSection = (content: string) => {
     const pattern = /\n(?:#{1,3}\s*)?Sources\s*\n[\s\S]*$/i;
@@ -437,17 +439,6 @@ function App() {
     return text.split('. ').map(s => s.trim()).filter(Boolean).slice(0, 6);
   };
 
-  const slides = latestReport
-    ? (() => {
-        const sections = parseSections(latestReport.content);
-        const slideItems = sections.map(section => ({
-          title: section.title,
-          bullets: buildBullets(section.lines)
-        }));
-        return slideItems;
-      })()
-    : [];
-
   const buildReportMarkdown = (msg: Message) => {
     const timestamp = new Date().toLocaleString();
     const header = `# Research Report\n\nGenerated: ${timestamp}\n\n`;
@@ -463,15 +454,6 @@ function App() {
       '\n'
     );
     return cleaned.trim();
-  };
-
-  const stripInlineMarkdown = (text: string) => {
-    let out = text;
-    out = out.replace(/`([^`]+)`/g, '$1');
-    out = out.replace(/\*\*([^*]+)\*\*/g, '$1');
-    out = out.replace(/\*([^*]+)\*/g, '$1');
-    out = out.replace(/\[(.*?)\]\((.*?)\)/g, '$1 ($2)');
-    return out;
   };
 
   const handleDownload = () => {
