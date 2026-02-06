@@ -427,13 +427,6 @@ function App() {
 
   const reportData = normalizedReport ? buildReportData(normalizedReport.content) : null;
 
-  // Switch to report tab when a new report is generated
-  useEffect(() => {
-    if (latestReport && !isStreaming) {
-      setActiveTab('report');
-    }
-  }, [latestReport, isStreaming]);
-
   const buildReportMarkdown = (msg: Message) => {
     const timestamp = new Date().toLocaleString();
     const header = `# Research Report\n\nGenerated: ${timestamp}\n\n`;
