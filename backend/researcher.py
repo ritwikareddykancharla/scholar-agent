@@ -344,13 +344,6 @@ class ScholarAgent:
             walk(obj)
             return list(urls)
 
-        contents = [
-            types.Content(
-                role="user" if msg.role == "user" else "model",
-                parts=[types.Part.from_text(text=msg.content)]
-            ) for msg in request.messages
-        ]
-
         sys_instruct = (
             "You are The Scholar, a research engine. Use Google Search for facts and cite sources. "
             "Never ask the user to do their own research. If data is needed, search for it yourself. "
