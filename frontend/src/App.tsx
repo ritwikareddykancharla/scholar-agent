@@ -13,6 +13,13 @@ interface Message {
   sourceTitles?: Record<number, string>;
 }
 
+const defaultTheme = {
+  accent: '#2563eb',
+  accentSoft: '#EEF2FF',
+  bg1: '#F8FAFC',
+  bg2: '#EEF2FF'
+};
+
 const toHex = (value: number) => value.toString(16).padStart(2, '0');
 
 const rgbToHex = (rgb: number[]) => {
