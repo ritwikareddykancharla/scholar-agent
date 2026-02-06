@@ -1,5 +1,8 @@
 name: CI
 
+permissions:
+  contents: write
+
 on:
   push:
     branches: [main]
@@ -53,6 +56,7 @@ jobs:
   loc:
     name: LOC
     runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.actor != 'github-actions[bot]'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -61,9 +65,35 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y cloc
       - name: Count lines of code
-        run: cloc backend frontend --report-file=cloc.txt
+        run: cloc backend frontend --report-file=cloc.txt --json > cloc.json
       - name: Upload report
         uses: actions/upload-artifact@v4
         with:
           name: cloc-report
           path: cloc.txt
+      - name: Update README
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          data = json.loads(Path("cloc.json").read_text())
+          total = data["SUM"]["code"]
+          readme = Path("README.md").read_text()
+          start = "<!-- LOC-START -->"
+          end = "<!-- LOC-END -->"
+          before, rest = readme.split(start)
+          _, after = rest.split(end)
+          block = f"{start}\nTotal LOC: **{total}**\n{end}"
+          Path("README.md").write_text(before + block + after)
+          PY
+      - name: Commit README
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add README.md
+          if git diff --cached --quiet; then
+            echo "No README changes."
+            exit 0
+          fi
+          git commit -m "chore: update LOC"
+          git push
