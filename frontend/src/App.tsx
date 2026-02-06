@@ -457,14 +457,6 @@ function App() {
     return `${header}${msg.content}${sources}`;
   };
 
-  const stripExecutiveSummarySection = (content: string) => {
-    const cleaned = content.replace(
-      /(^|\n)#{1,3}\s*Executive Summary[\s\S]*?(?=\n#{1,3}\s|\nSources\b|$)/i,
-      '\n'
-    );
-    return cleaned.trim();
-  };
-
   const stripInlineMarkdown = (text: string) => {
     let out = text;
     out = out.replace(/`([^`]+)`/g, '$1');
@@ -542,7 +534,7 @@ function App() {
           <div className="report-badge">Scholar</div>
         </div>
 
-        {exportMode && reportData.executive && (
+        {reportData.executive && (
           <div className="report-summary">
             <div className="report-section-title">Executive Summary</div>
             <ReactMarkdown remarkPlugins={[remarkGfm]}>
@@ -749,11 +741,7 @@ function App() {
               </div>
             )}
 
-            {messages.map((msg, idx) => {
-              const displayContent = msg === latestReport && msg.role === 'assistant'
-                ? stripExecutiveSummarySection(msg.content)
-                : msg.content;
-              return (
+            {messages.map((msg, idx) => (
               <div key={idx} className={`message ${msg.role}`}>
                 <div className={`avatar ${msg.role}`}>
                   {msg.role === 'user' ? 'U' : 'AI'}
@@ -763,7 +751,7 @@ function App() {
                     {msg.role === 'user' ? 'You' : 'The Scholar'}
                   </div>
                   <div className="md">
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{displayContent}</ReactMarkdown>
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
                   </div>
                   {msg.sources && msg.sources.length > 0 && (
                     <div className="sources">
@@ -784,8 +772,7 @@ function App() {
                   )}
                 </div>
               </div>
-            );
-            })}
+            ))}
 
             {status && (
               <div className="status-line">
