@@ -13,13 +13,6 @@ interface Message {
   sourceTitles?: Record<number, string>;
 }
 
-const defaultTheme = {
-  accent: '#2563eb',
-  accentSoft: '#EEF2FF',
-  bg1: '#F8FAFC',
-  bg2: '#EEF2FF'
-};
-
 const toHex = (value: number) => value.toString(16).padStart(2, '0');
 
 const rgbToHex = (rgb: number[]) => {
@@ -197,13 +190,6 @@ function App() {
     content: latestReport.content.replace(/^\s*Deep Research Report\s*:\s*/i, '')
   } : null;
   const latestUserPrompt = [...messages].reverse().find(msg => msg.role === 'user')?.content ?? 'Research Report';
-
-  const defaultTheme = {
-    accent: '#2563eb',
-    accentSoft: '#EEF2FF',
-    bg1: '#F8FAFC',
-    bg2: '#EEF2FF'
-  };
 
   const getHostTitle = (url: string) => {
     try {
