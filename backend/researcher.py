@@ -506,9 +506,8 @@ class ScholarAgent:
 
             if sources_list:
                 sources_list = _filter_sources(sources_list)
-                # Remove any prior (possibly bad) Sources block and rebuild a clean one.
+                # Strip any Sources section from the text - frontend will render sources separately
                 cited_text = _strip_sources_section(cited_text)
-                cited_text = cited_text.rstrip() + "\n\nSources\n" + _format_sources_block(sources_list)
 
             should_regen = (
                 _needs_regen(full_response_text)
@@ -582,7 +581,6 @@ class ScholarAgent:
                 if sources_list:
                     sources_list = _filter_sources(sources_list)
                     cited_text = _strip_sources_section(cited_text)
-                    cited_text = cited_text.rstrip() + "\n\nSources\n" + _format_sources_block(sources_list)
 
                 if not sources_list:
                     source_lines = _extract_sources_block(cited_text)
@@ -591,7 +589,6 @@ class ScholarAgent:
                         sources_list = [item.get("url") for item in repaired if item.get("url")]
                         if sources_list:
                             cited_text = _strip_sources_section(cited_text)
-                            cited_text = cited_text.rstrip() + "\n\nSources\n" + _format_sources_block(sources_list)
 
             yield json.dumps({
                 "type": "final",
