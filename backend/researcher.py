@@ -4,6 +4,7 @@ import os
 import re
 import time
 from typing import AsyncGenerator, List
+from urllib.parse import urlparse
 
 import httpx
 from dotenv import load_dotenv
@@ -121,6 +122,22 @@ class ScholarAgent:
                 seen.add(url)
                 ordered.append(url)
             return ordered
+
+        def _strip_sources_section(text: str) -> str:
+            """Remove any existing Sources section to avoid duplicating bad URLs."""
+            return re.sub(
+                r"\n(?:#{1,3}\s*)?Sources\s*\n[\s\S]*$",
+                "",
+                text,
+                flags=re.IGNORECASE,
+            ).rstrip()
+
+        def _format_sources_block(urls: list[str]) -> str:
+            lines = []
+            for i, url in enumerate(urls, 1):
+                domain = urlparse(url).netloc or "Source"
+                lines.append(f"[{i}] {domain} — {url}")
+            return "\n".join(lines)
 
         async def _resolve_redirects(urls: list[str]) -> list[str]:
             if not urls:
@@ -489,6 +506,9 @@ class ScholarAgent:
 
             if sources_list:
                 sources_list = _filter_sources(sources_list)
+                # Remove any prior (possibly bad) Sources block and rebuild a clean one.
+                cited_text = _strip_sources_section(cited_text)
+                cited_text = cited_text.rstrip() + "\n\nSources\n" + _format_sources_block(sources_list)
 
             should_regen = (
                 _needs_regen(full_response_text)
@@ -561,6 +581,8 @@ class ScholarAgent:
 
                 if sources_list:
                     sources_list = _filter_sources(sources_list)
+                    cited_text = _strip_sources_section(cited_text)
+                    cited_text = cited_text.rstrip() + "\n\nSources\n" + _format_sources_block(sources_list)
 
                 if not sources_list:
                     source_lines = _extract_sources_block(cited_text)
@@ -568,9 +590,8 @@ class ScholarAgent:
                         repaired = await _repair_sources(source_lines, user_request)
                         sources_list = [item.get("url") for item in repaired if item.get("url")]
                         if sources_list:
-                            cited_text = re.sub(r"\n(?:#{1,3}\s*)?Sources\s*\n[\s\S]*$", "", cited_text, flags=re.IGNORECASE).strip() + "\n\nSources\n" + "\n".join(
-                                [f"[{i+1}] {item.get('title','Source')} — {item.get('url')}" for i, item in enumerate(repaired) if item.get("url")]
-                            )
+                            cited_text = _strip_sources_section(cited_text)
+                            cited_text = cited_text.rstrip() + "\n\nSources\n" + _format_sources_block(sources_list)
 
             yield json.dumps({
                 "type": "final",
