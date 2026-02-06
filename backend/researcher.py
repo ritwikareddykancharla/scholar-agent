@@ -123,10 +123,22 @@ class ScholarAgent:
                 ordered.append(url)
             return ordered
 
+        def _unique_append(target: list[str], seen: set[str], urls: list[str]):
+            for url in urls:
+                if not url or url in seen:
+                    continue
+                seen.add(url)
+                target.append(url)
+
         def _strip_sources_section(text: str) -> str:
             """Remove any existing Sources section to avoid duplicating bad URLs."""
+            # Match Sources section in various formats:
+            # - "Sources\n" followed by content
+            # - "Sources [1]..." (no newline between Sources and content)
+            # - "## Sources\n" (markdown header)
+            # Strip everything from "Sources" onwards
             return re.sub(
-                r"\n(?:#{1,3}\s*)?Sources\s*\n[\s\S]*$",
+                r"\n?(?:#{1,3}\s*)?Sources[\s\S]*$",
                 "",
                 text,
                 flags=re.IGNORECASE,
@@ -160,6 +172,12 @@ class ScholarAgent:
             ) as client:
                 tasks = [fetch(u, client) for u in urls]
                 return await asyncio.gather(*tasks)
+
+        async def _resolve_and_filter(urls: list[str]) -> list[str]:
+            if not urls:
+                return []
+            resolved = await _resolve_redirects(urls)
+            return _filter_sources(resolved)
 
         def _extract_grounding_metadata(resp):
             candidates = _ensure_list(_get(resp, "candidates"))
@@ -379,7 +397,8 @@ class ScholarAgent:
             user_request = request.messages[-1].content if request.messages else ""
             is_deep = _wants_deep_research(user_request)
             research_notes: list[str] = []
-            pre_source_set = set()
+            pre_source_urls: list[str] = []
+            pre_source_seen: set[str] = set()
             start_time = time.monotonic()
 
             if is_deep:
@@ -403,10 +422,8 @@ class ScholarAgent:
                     )
                     if notes_response.text:
                         research_notes.append(notes_response.text)
-                    for url in _extract_grounding_urls(notes_response):
-                        pre_source_set.add(url)
-                    for url in _extract_urls(notes_response):
-                        pre_source_set.add(url)
+                    _unique_append(pre_source_urls, pre_source_seen, _extract_grounding_urls(notes_response))
+                    _unique_append(pre_source_urls, pre_source_seen, _extract_urls(notes_response))
 
                 min_seconds_default = "0"
                 min_seconds = int(os.getenv("DEEP_RESEARCH_MIN_SECONDS", min_seconds_default))
@@ -458,14 +475,13 @@ class ScholarAgent:
                 config=config
             )
 
-            source_set = set()
+            source_urls: list[str] = []
+            source_seen: set[str] = set()
             full_response_text = ""
             last_grounding = None
             for chunk in response_stream:
-                for url in _extract_grounding_urls(chunk):
-                    source_set.add(url)
-                for url in _extract_urls(chunk):
-                    source_set.add(url)
+                _unique_append(source_urls, source_seen, _extract_grounding_urls(chunk))
+                _unique_append(source_urls, source_seen, _extract_urls(chunk))
                 gm = _extract_grounding_metadata(chunk)
                 if gm:
                     last_grounding = gm
@@ -498,11 +514,11 @@ class ScholarAgent:
                 sources_list, index_map = _build_source_map(normalized_chunk_urls)
                 cited_text = _insert_citations(full_response_text, supports, index_map)
 
-            if not sources_list and source_set:
-                sources_list = _filter_sources(sorted(source_set))
+            if not sources_list and source_urls:
+                sources_list = await _resolve_and_filter(source_urls)
 
-            if not sources_list and pre_source_set:
-                sources_list = _filter_sources(sorted(pre_source_set))
+            if not sources_list and pre_source_urls:
+                sources_list = await _resolve_and_filter(pre_source_urls)
 
             if sources_list:
                 sources_list = _filter_sources(sources_list)
@@ -542,14 +558,13 @@ class ScholarAgent:
                     config=config
                 )
 
-                regen_source_set = set()
+                regen_source_urls: list[str] = []
+                regen_source_seen: set[str] = set()
                 regen_text = ""
                 regen_grounding = None
                 for chunk in regen_stream:
-                    for url in _extract_grounding_urls(chunk):
-                        regen_source_set.add(url)
-                    for url in _extract_urls(chunk):
-                        regen_source_set.add(url)
+                    _unique_append(regen_source_urls, regen_source_seen, _extract_grounding_urls(chunk))
+                    _unique_append(regen_source_urls, regen_source_seen, _extract_urls(chunk))
                     gm = _extract_grounding_metadata(chunk)
                     if gm:
                         regen_grounding = gm
@@ -575,8 +590,8 @@ class ScholarAgent:
                     sources_list, index_map = _build_source_map(normalized_chunk_urls)
                     cited_text = _insert_citations(regen_text, supports, index_map)
 
-                if not sources_list and regen_source_set:
-                    sources_list = _filter_sources(sorted(regen_source_set))
+                if not sources_list and regen_source_urls:
+                    sources_list = await _resolve_and_filter(regen_source_urls)
 
                 if sources_list:
                     sources_list = _filter_sources(sources_list)
