@@ -432,7 +432,7 @@ function App() {
     if (latestReport && !isStreaming) {
       setActiveTab('report');
     }
-  }, [latestReport?.content, isStreaming]);
+  }, [latestReport, isStreaming]);
 
   const buildReportMarkdown = (msg: Message) => {
     const timestamp = new Date().toLocaleString();
@@ -557,8 +557,6 @@ function App() {
             </ReactMarkdown>
           </div>
         ))}
-
-}
       </div>
     );
   };
