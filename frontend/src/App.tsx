@@ -550,6 +550,24 @@ function App() {
             </ReactMarkdown>
           </div>
         ))}
+
+        {normalizedReport.sources && normalizedReport.sources.length > 0 && (
+          <div className="report-section">
+            <div className="report-section-title">Sources</div>
+            <ol className="report-sources">
+              {normalizedReport.sources.map((source, index) => {
+                const title = normalizedReport.sourceTitles?.[index + 1];
+                return (
+                  <li key={`${source}-${index}`}>
+                    <a href={source} target="_blank" rel="noreferrer">
+                      {title ? `${title}` : source}
+                    </a>
+                  </li>
+                );
+              })}
+            </ol>
+          </div>
+        )}
       </div>
     );
   };
