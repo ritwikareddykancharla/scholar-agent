@@ -427,7 +427,19 @@ class ScholarAgent:
                 )
                 final_contents = [types.Content(role="user", parts=[types.Part.from_text(text=final_prompt)])]
             else:
-                final_contents = contents
+                recent_context = "\n".join(
+                    f"{msg.role}: {msg.content}" for msg in request.messages[-6:]
+                )
+                final_prompt = (
+                    "Answer the latest user request using Google Search tool calls. "
+                    "Include inline citations like [1] and a Sources section formatted as:\n"
+                    "[1] Title — https://example.com\n"
+                    "[2] Title — https://example.com\n"
+                    "Be concise but complete.\n\n"
+                    f"Conversation context:\n{recent_context}\n\n"
+                    f"Latest request: {user_request}"
+                )
+                final_contents = [types.Content(role="user", parts=[types.Part.from_text(text=final_prompt)])]
 
             # Stream the main text response
             response_stream = self.client.models.generate_content_stream(
