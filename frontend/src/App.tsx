@@ -248,7 +248,7 @@ function App() {
     };
 
     img.onerror = () => setSlideTheme(defaultTheme);
-  }, [themeKey]);
+  }, [themeKey, latestReport?.sources]);
 
   const stripSourcesSection = (content: string) => {
     const pattern = /\n(?:#{1,3}\s*)?Sources\s*\n[\s\S]*$/i;
