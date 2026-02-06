@@ -502,15 +502,6 @@ function App() {
           ['--report-accent-soft' as string]: slideTheme.accentSoft
         }}
       >
-        <div className="report-header">
-          <div>
-            <div className="report-kicker">Deep Research Report</div>
-            <h1>{latestUserPrompt}</h1>
-            <div className="report-meta">Generated {new Date().toLocaleDateString()}</div>
-          </div>
-          <div className="report-badge">Scholar</div>
-        </div>
-
         {exportMode && reportData.executive && (
           <div className="report-summary">
             <div className="report-section-title">Executive Summary</div>
@@ -559,23 +550,7 @@ function App() {
           </div>
         ))}
 
-        {normalizedReport.sources && normalizedReport.sources.length > 0 && (
-          <div className="report-section">
-            <div className="report-section-title">Sources</div>
-            <ol className="report-sources">
-              {normalizedReport.sources.map((source, index) => {
-                const title = normalizedReport.sourceTitles?.[index + 1];
-                return (
-                  <li key={`${source}-${index}`}>
-                    <a href={source} target="_blank" rel="noreferrer">
-                      {title ? `${title}` : source}
-                    </a>
-                  </li>
-                );
-              })}
-            </ol>
-          </div>
-        )}
+}
       </div>
     );
   };
