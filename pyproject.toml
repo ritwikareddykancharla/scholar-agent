@@ -1,6 +1,9 @@
 [tool.ruff]
 target-version = "py311"
 line-length = 100
+exclude = ["node_modules", "frontend", "dist", "build", "venv", ".venv"]
+
+[tool.ruff.lint]
 select = ["E", "F", "I"]
 ignore = ["E501"]
-exclude = ["node_modules", "frontend", "dist", "build", "venv", ".venv"]
+per-file-ignores = { "backend/main.py" = ["I001"] }
