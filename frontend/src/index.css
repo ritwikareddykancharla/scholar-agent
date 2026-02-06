@@ -280,38 +280,6 @@ body {
   color: var(--muted);
 }
 
-.workspace-tabs {
-  margin-top: 0.8rem;
-  display: inline-flex;
-  gap: 0.5rem;
-  padding: 0.35rem;
-  border-radius: 999px;
-  background: #eef2ff;
-  border: 1px solid #e2e8f0;
-}
-
-.tab-button {
-  border: none;
-  background: transparent;
-  color: #475569;
-  font-weight: 600;
-  font-size: 0.85rem;
-  padding: 0.35rem 0.9rem;
-  border-radius: 999px;
-  cursor: pointer;
-  transition: background 0.2s ease, color 0.2s ease, transform 0.2s ease;
-}
-
-.tab-button.active {
-  background: #ffffff;
-  color: #1d4ed8;
-  box-shadow: 0 6px 12px rgba(15, 23, 42, 0.12);
-}
-
-.tab-button:hover {
-  transform: translateY(-1px);
-}
-
 .workspace-actions {
   display: flex;
   gap: 0.75rem;
@@ -345,27 +313,6 @@ body {
   opacity: 0.5;
   cursor: not-allowed;
   box-shadow: none;
-}
-
-.report-empty {
-  background: var(--surface);
-  border-radius: 24px;
-  padding: 2.5rem;
-  border: 1px dashed var(--border);
-  color: #475569;
-  text-align: center;
-}
-
-.report-empty-title {
-  font-size: 1.2rem;
-  font-weight: 600;
-  color: #0f172a;
-  margin-bottom: 0.4rem;
-}
-
-.report-empty-sub {
-  font-size: 0.95rem;
-  color: #64748b;
 }
 
 .thread {
