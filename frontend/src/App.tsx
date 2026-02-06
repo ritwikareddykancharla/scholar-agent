@@ -56,6 +56,7 @@ function App() {
   const [isStreaming, setIsStreaming] = useState(false);
   const [timeline, setTimeline] = useState<{ time: string; label: string }[]>([]);
   const [slideTheme, setSlideTheme] = useState(defaultTheme);
+  const [activeTab, setActiveTab] = useState<'chat' | 'report'>('chat');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const reportExportRef = useRef<HTMLDivElement>(null);
 
@@ -426,6 +427,13 @@ function App() {
 
   const reportData = normalizedReport ? buildReportData(normalizedReport.content) : null;
 
+  // Switch to report tab when a new report is generated
+  useEffect(() => {
+    if (latestReport && !isStreaming) {
+      setActiveTab('report');
+    }
+  }, [latestReport?.content, isStreaming]);
+
   const buildReportMarkdown = (msg: Message) => {
     const timestamp = new Date().toLocaleString();
     const header = `# Research Report\n\nGenerated: ${timestamp}\n\n`;
@@ -502,7 +510,7 @@ function App() {
           ['--report-accent-soft' as string]: slideTheme.accentSoft
         }}
       >
-        {exportMode && reportData.executive && (
+        {reportData.executive && (
           <div className="report-summary">
             <div className="report-section-title">Executive Summary</div>
             <ReactMarkdown remarkPlugins={[remarkGfm]}>
@@ -666,12 +674,28 @@ function App() {
           </div>
 
           {latestReport && reportData && (
-            <div className="report-view">
-              {renderReport(false)}
+            <div className="tabs">
+              <button
+                className={`tab ${activeTab === 'chat' ? 'active' : ''}`}
+                onClick={() => setActiveTab('chat')}
+              >
+                Chat
+              </button>
+              <button
+                className={`tab ${activeTab === 'report' ? 'active' : ''}`}
+                onClick={() => setActiveTab('report')}
+              >
+                Report
+              </button>
             </div>
           )}
 
-          <div className="thread">
+          {activeTab === 'report' && latestReport && reportData ? (
+            <div className="report-view">
+              {renderReport(false)}
+            </div>
+          ) : (
+            <div className="thread">
             {messages.length === 0 && (
               <div className="empty">
                 <div className="empty-title">Start a research session</div>
@@ -739,6 +763,7 @@ function App() {
             )}
             <div ref={messagesEndRef} />
           </div>
+          )}
         </section>
       </div>
 
